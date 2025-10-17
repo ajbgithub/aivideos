@@ -1,6 +1,25 @@
+'use client';
+
+import { useCallback } from "react";
+
 export default function TermsOfServicePage() {
+  const handleBack = useCallback(() => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.location.href = "/";
+    }
+  }, []);
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-16 text-white">
+      <button
+        type="button"
+        onClick={handleBack}
+        className="mb-6 inline-flex items-center rounded-full border border-white/10 px-4 py-2 text-xs font-semibold tracking-[0.2em] text-neutral-300 transition hover:border-white hover:text-white"
+      >
+        ← Back
+      </button>
       <h1 className="text-3xl font-semibold tracking-wide">Terms of Service</h1>
       <p className="mt-4 text-sm text-neutral-400">
         Last updated on {new Date().toLocaleDateString()}

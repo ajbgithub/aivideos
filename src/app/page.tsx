@@ -508,12 +508,12 @@ export default function Home() {
           >
             Upload Your AI Videos
           </button>
-          <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-[11px] uppercase tracking-[0.3em] text-neutral-400">
+          <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-[11px] tracking-[0.3em] text-neutral-400">
             Categories
             <select
               value={selectedCategory}
               onChange={(event) => setSelectedCategory(event.target.value)}
-              className="rounded-full border border-white/10 bg-black px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white focus:border-blue-500 focus:outline-none"
+              className="rounded-full border border-white/10 bg-black px-3 py-1 text-xs font-semibold tracking-[0.1em] text-white focus:border-blue-500 focus:outline-none"
               aria-label="Filter videos by category"
             >
               {CATEGORIES.map((category) => (
@@ -594,9 +594,11 @@ export default function Home() {
               <p className="mt-3 text-sm text-neutral-300">
                 {selectedVideo.fullName ?? toTitleCase(selectedVideo.uploader.name)}
               </p>
-              <p className="text-xs text-neutral-500">
-                {selectedVideo.uploader.email}
-              </p>
+              {selectedVideo.uploader.email ? (
+                <p className="text-xs text-neutral-500">
+                  {selectedVideo.uploader.email}
+                </p>
+              ) : null}
               <p className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500">
                 {selectedVideo.viewCount.toLocaleString()} views
               </p>
@@ -862,8 +864,14 @@ function UploadModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-6">
-      <div className="mx-auto w-full max-w-2xl rounded-3xl border border-white/10 bg-black px-6 py-10 shadow-2xl sm:px-10 sm:py-12 max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-6"
+      onClick={handleClose}
+    >
+      <div
+        className="mx-auto w-full max-w-2xl rounded-3xl border border-white/10 bg-black px-6 py-10 shadow-2xl sm:px-10 sm:py-12 max-h-[90vh] overflow-y-auto"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-semibold tracking-wide">
@@ -920,7 +928,7 @@ function UploadModal({
 
             <label className="flex flex-col gap-2 text-sm">
               Description
-              <input
+              <textarea
                 value={formState.description}
                 onChange={(event) =>
                   setFormState((prev) => ({
@@ -929,8 +937,7 @@ function UploadModal({
                   }))
                 }
                 placeholder="Share how you created it"
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
-                maxLength={120}
+                className="min-h-[96px] resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
               />
             </label>
           </div>
@@ -1001,7 +1008,7 @@ function UploadModal({
             <span>
               By uploading to this site, I acknowledge this work as my own, and credit
               other artists where appropriate. I acknowledge AI Home Studios may
-              republish and credit my work to its network, but that the organization
+              republish and reference my work with its network, but that the organization
               does not claim ownership or copyright of my work.
             </span>
           </label>
@@ -1152,8 +1159,14 @@ function PromptDialog({
   errorMessage?: string | null;
 }) {
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-6">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center">
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-6"
+      onClick={onDismiss}
+    >
+      <div
+        className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center"
+        onClick={(event) => event.stopPropagation()}
+      >
         <h3 className="text-xl font-semibold tracking-wide">{title}</h3>
         <p className="mt-3 text-sm text-neutral-400">{description}</p>
         {errorMessage ? (
@@ -1201,8 +1214,14 @@ function PromptDialog({
 
 function AboutDialog({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <h3 className="text-xl font-semibold tracking-wide">About Us</h3>
         <p className="mt-4 text-sm text-neutral-300">
           Welcome to the studio! We&apos;re here to highlight AI content in a quickly
@@ -1214,7 +1233,7 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
             href="https://www.linkedin.com/in/andrewjbilden/"
             target="_blank"
             rel="noreferrer"
-            className="text-blue-300 underline decoration-dotted underline-offset-2 hover:text-blue-200"
+            className="text-blue-300 hover:text-blue-200"
           >
             Andrew J. Bilden
           </a>

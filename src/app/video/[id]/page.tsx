@@ -99,7 +99,9 @@ export default function VideoPage({ params }: VideoPageProps) {
               <h2 className="mt-4 text-2xl font-semibold tracking-wide">
                 {video.fullName ?? video.uploader.name}
               </h2>
-              <p className="mt-1 text-sm text-neutral-300">{video.uploader.email}</p>
+              {video.uploader.email ? (
+                <p className="mt-1 text-sm text-neutral-300">{video.uploader.email}</p>
+              ) : null}
             </div>
 
             <div className="space-y-2 text-xs text-neutral-400">
