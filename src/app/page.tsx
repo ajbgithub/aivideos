@@ -1,5 +1,7 @@
 "use client";
 
+import { supabase } from "@/lib/supabaseClient";
+import type { User as SupabaseAuthUser } from "@supabase/supabase-js";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type User = {
@@ -168,7 +170,7 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [authPromptContext, setAuthPromptContext] =
     useState<"upload" | "profile">("upload");
-  const [pendingAction, setPendingAction] = useState<"upload" | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const objectUrls = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -180,57 +182,159 @@ export default function Home() {
     };
   }, []);
 
-  const isAuthenticated = Boolean(user);
-  const isAdmin = user?.email === ADMIN_EMAIL;
-
-  const handleGoogleSignIn = useCallback(() => {
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    window.open(
-      "https://accounts.google.com/signin/v2/identifier",
-      "_blank",
-      "noopener,noreferrer"
+    const currentUrl = new URL(window.location.href);
+    const params = currentUrl.searchParams;
+    const urlAction = params.get("authAction");
+
+    if (urlAction) {
+      window.sessionStorage.setItem("authAction", urlAction);
+      params.delete("authAction");
+    }
+
+    const hasCode = params.has("code");
+    const hasState = params.has("state");
+
+    if (hasCode) {
+      params.delete("code");
+    }
+    if (hasState) {
+      params.delete("state");
+    }
+
+    if (urlAction || hasCode || hasState) {
+      currentUrl.search = params.toString();
+      window.history.replaceState({}, "", currentUrl.toString());
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncUserFromSession = (authUser: SupabaseAuthUser | null) => {
+      if (!isMounted) {
+        return;
+      }
+
+      if (authUser) {
+        const mappedUser = mapSupabaseUser(authUser);
+
+        if (mappedUser) {
+          setUser(mappedUser);
+          setAuthPrompt(false);
+          setAuthError(null);
+
+          if (typeof window !== "undefined") {
+            const storedAction = window.sessionStorage.getItem("authAction");
+
+            if (storedAction === "upload") {
+              setShowUploadForm(true);
+              window.sessionStorage.removeItem("authAction");
+            }
+          }
+        }
+      } else {
+        setUser(null);
+      }
+    };
+
+    supabase.auth
+      .getUser()
+      .then(({ data, error }) => {
+        if (error) {
+          return;
+        }
+
+        syncUserFromSession(data.user ?? null);
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+
+        setUser(null);
+      });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        syncUserFromSession(session?.user ?? null);
+      }
     );
 
-    const emailFromUser = window.prompt(
-      "Enter your Google email to complete sign-in:"
-    );
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
-    if (!emailFromUser) {
+  const isAuthenticated = Boolean(user);
+  const isAdmin = user?.email === ADMIN_EMAIL;
+
+  const handleGoogleSignIn = useCallback(async () => {
+    if (typeof window === "undefined") {
       return;
     }
 
-    const trimmedEmail = emailFromUser.trim();
+    setAuthError(null);
 
-    if (!trimmedEmail) {
-      return;
+    const action =
+      authPromptContext === "upload" ? ("upload" as const) : null;
+
+    if (action) {
+      window.sessionStorage.setItem("authAction", action);
+    } else {
+      window.sessionStorage.removeItem("authAction");
     }
 
-    const nameFromEmail =
-      trimmedEmail
-        .split("@")[0]
-        ?.replace(/[._-]/g, " ")
-        .trim() || "Creator";
+    const redirectUrl = new URL(window.location.origin);
 
-    setUser({
-      email: trimmedEmail,
-      name: toTitleCase(nameFromEmail),
+    if (action) {
+      redirectUrl.searchParams.set("authAction", action);
+    }
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: redirectUrl.toString(),
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
     });
-    setAuthPrompt(false);
 
-    if (pendingAction === "upload") {
-      setShowUploadForm(true);
+    if (error) {
+      setAuthError(error.message);
+      return;
     }
 
-    setPendingAction(null);
-  }, [pendingAction]);
+    if (data?.url) {
+      setAuthPrompt(false);
+      window.location.assign(data.url);
+    }
+  }, [authPromptContext]);
 
-  const handleGoogleSignOut = useCallback(() => {
+  const handleGoogleSignOut = useCallback(async () => {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("authAction");
+    }
+
     setUser(null);
     setSelectedVideo(null);
-    setPendingAction(null);
+    setShowUploadForm(false);
   }, []);
 
   const handleUploadClick = useCallback(() => {
@@ -239,9 +343,9 @@ export default function Home() {
       return;
     }
 
+    setAuthError(null);
     setAuthPromptContext("upload");
     setAuthPrompt(true);
-    setPendingAction("upload");
   }, [isAuthenticated, user]);
 
   const handleProfileClick = useCallback(() => {
@@ -249,14 +353,18 @@ export default function Home() {
       return;
     }
 
+    setAuthError(null);
     setAuthPromptContext("profile");
     setAuthPrompt(true);
-    setPendingAction(null);
   }, [isAuthenticated, user]);
 
   const handleDismissPrompt = useCallback(() => {
     setAuthPrompt(false);
-    setPendingAction(null);
+    setAuthError(null);
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("authAction");
+    }
   }, []);
 
   const handleUploadSubmit = useCallback(
@@ -558,10 +666,50 @@ export default function Home() {
           title={promptCopy.title}
           description={promptCopy.description}
           confirmLabel={promptCopy.confirmLabel}
+          errorMessage={authError}
         />
       ) : null}
     </div>
   );
+}
+
+function mapSupabaseUser(authUser: SupabaseAuthUser): User | null {
+  const email = authUser.email;
+
+  if (!email) {
+    return null;
+  }
+
+  const metadata = authUser.user_metadata as
+    | Record<string, unknown>
+    | undefined;
+
+  const rawName =
+    (metadata?.full_name as string | undefined) ??
+    (metadata?.name as string | undefined);
+
+  const cleanedName = rawName?.trim();
+
+  if (cleanedName) {
+    return {
+      email,
+      name: cleanedName,
+    };
+  }
+
+  const emailHandle = email.split("@")[0] ?? "Creator";
+  const formattedHandle = emailHandle
+    .replace(/[._-]/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    email,
+    name: formattedHandle
+      ? toTitleCase(formattedHandle)
+      : "Creator",
+  };
 }
 
 function UploadModal({
@@ -848,18 +996,23 @@ function PromptDialog({
   title,
   description,
   confirmLabel,
+  errorMessage,
 }: {
   onDismiss: () => void;
   onConfirm: () => void;
   title: string;
   description: string;
   confirmLabel: string;
+  errorMessage?: string | null;
 }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-6">
       <div className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center">
         <h3 className="text-xl font-semibold tracking-wide">{title}</h3>
         <p className="mt-3 text-sm text-neutral-400">{description}</p>
+        {errorMessage ? (
+          <p className="mt-4 text-xs font-semibold text-red-400">{errorMessage}</p>
+        ) : null}
         <div className="mt-8 flex flex-wrap justify-center gap-4 text-sm">
           <button
             type="button"
