@@ -22,6 +22,8 @@ type Video = {
   createdAt: string;
   viewCount: number;
   isTopRated: boolean;
+  category: string;
+  tiktokLink?: string;
 };
 
 type UploadPayload = {
@@ -29,7 +31,24 @@ type UploadPayload = {
   description: string;
   videoLink: string;
   videoFile: File | null;
+  category: string;
+  tiktokLink: string;
 };
+
+const CATEGORY_OPTIONS = [
+  "Animals",
+  "Cats",
+  "Dogs",
+  "Films",
+  "Music Videos",
+  "News",
+  "Podcasts",
+  "Pop-Icons",
+  "TV",
+] as const;
+
+const CATEGORIES = ["All", ...CATEGORY_OPTIONS];
+const DEFAULT_UPLOAD_CATEGORY = "Films";
 
 const initialVideos: Video[] = [
   {
@@ -42,6 +61,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 18230,
     isTopRated: true,
+    category: "Films",
   },
   {
     id: "vid-28",
@@ -53,6 +73,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 12104,
     isTopRated: true,
+    category: "Pop-Icons",
   },
   {
     id: "vid-29",
@@ -64,6 +85,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 8541,
     isTopRated: false,
+    category: "Films",
   },
   {
     id: "vid-30",
@@ -74,6 +96,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 15309,
     isTopRated: true,
+    category: "Music Videos",
   },
   {
     id: "vid-31",
@@ -85,6 +108,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 6542,
     isTopRated: false,
+    category: "News",
   },
   {
     id: "vid-32",
@@ -96,6 +120,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 9978,
     isTopRated: false,
+    category: "Music Videos",
   },
   {
     id: "vid-33",
@@ -105,6 +130,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 4412,
     isTopRated: false,
+    category: "Animals",
   },
   {
     id: "vid-34",
@@ -116,6 +142,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 11221,
     isTopRated: false,
+    category: "Films",
   },
   {
     id: "vid-35",
@@ -126,6 +153,7 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 5230,
     isTopRated: false,
+    category: "Podcasts",
   },
 ];
 
@@ -137,6 +165,10 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [authPrompt, setAuthPrompt] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [authPromptContext, setAuthPromptContext] =
+    useState<"upload" | "profile">("upload");
+  const [pendingAction, setPendingAction] = useState<"upload" | null>(null);
   const objectUrls = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -186,21 +218,46 @@ export default function Home() {
       email: trimmedEmail,
       name: toTitleCase(nameFromEmail),
     });
-  }, []);
+    setAuthPrompt(false);
+
+    if (pendingAction === "upload") {
+      setShowUploadForm(true);
+    }
+
+    setPendingAction(null);
+  }, [pendingAction]);
 
   const handleGoogleSignOut = useCallback(() => {
     setUser(null);
     setSelectedVideo(null);
+    setPendingAction(null);
   }, []);
 
-  const requireAuthentication = useCallback(() => {
-    if (!isAuthenticated) {
-      setAuthPrompt(true);
-      return false;
+  const handleUploadClick = useCallback(() => {
+    if (isAuthenticated && user) {
+      setShowUploadForm(true);
+      return;
     }
 
-    return true;
-  }, [isAuthenticated]);
+    setAuthPromptContext("upload");
+    setAuthPrompt(true);
+    setPendingAction("upload");
+  }, [isAuthenticated, user]);
+
+  const handleProfileClick = useCallback(() => {
+    if (isAuthenticated && user) {
+      return;
+    }
+
+    setAuthPromptContext("profile");
+    setAuthPrompt(true);
+    setPendingAction(null);
+  }, [isAuthenticated, user]);
+
+  const handleDismissPrompt = useCallback(() => {
+    setAuthPrompt(false);
+    setPendingAction(null);
+  }, []);
 
   const handleUploadSubmit = useCallback(
     (payload: UploadPayload) => {
@@ -228,6 +285,8 @@ export default function Home() {
           createdAt: now,
           viewCount: 0,
           isTopRated: false,
+          category: payload.category,
+          tiktokLink: payload.tiktokLink ? payload.tiktokLink : undefined,
         });
       } else if (payload.videoLink) {
         const { url, source } = normaliseLink(payload.videoLink);
@@ -245,6 +304,8 @@ export default function Home() {
           createdAt: now,
           viewCount: 0,
           isTopRated: false,
+          category: payload.category,
+          tiktokLink: payload.tiktokLink ? payload.tiktokLink : undefined,
         });
       }
 
@@ -254,11 +315,34 @@ export default function Home() {
     [user, videos]
   );
 
-  const videosToDisplay = useMemo(() => videos, [videos]);
+  const videosToDisplay = useMemo(() => {
+    if (selectedCategory === "All") {
+      return videos;
+    }
+
+    return videos.filter((video) => video.category === selectedCategory);
+  }, [selectedCategory, videos]);
   const topRatedVideos = useMemo(
     () => videos.filter((video) => video.isTopRated),
     [videos]
   );
+  const promptCopy = useMemo(() => {
+    if (authPromptContext === "profile") {
+      return {
+        title: "Create your account",
+        description:
+          "Create an account with us through Google Sign On to upload videos, access premium features, and curate your feed.",
+        confirmLabel: "Continue with Google",
+      };
+    }
+
+    return {
+      title: "Upload with Google",
+      description:
+        "Create an account with us through Google Sign On to upload videos and share your latest work with the community.",
+      confirmLabel: "Continue with Google",
+    };
+  }, [authPromptContext]);
 
   const handleToggleTopRated = useCallback((videoId: string) => {
     setVideos((previousVideos) => {
@@ -281,11 +365,11 @@ export default function Home() {
       <header className="flex items-start justify-between px-10 py-10">
         <div>
           <span className="block text-xs uppercase tracking-[0.6em] text-neutral-500">
-            A Home For
+            AI Home Studios
           </span>
           <h1 className="mt-4 text-5xl font-semibold tracking-wide">AI Videos</h1>
           <p className="mt-3 text-sm text-neutral-400">
-            Highlighting AI video creators in one tool-agnostic place
+            Highlighting the work of AI video creators in one tool agnostic place
           </p>
         </div>
 
@@ -306,36 +390,51 @@ export default function Home() {
           ) : (
             <button
               type="button"
-              onClick={handleGoogleSignIn}
+              onClick={handleProfileClick}
               className="flex size-12 items-center justify-center rounded-full border border-white/20 transition hover:border-white"
-              aria-label="Sign in with Google"
+              aria-label="Open profile menu"
             >
-              <GoogleIcon />
+              <ProfileIcon />
             </button>
           )}
         </div>
       </header>
-      <div className="flex justify-center">
+
+      <main className="flex-1 px-10 pb-16">
+        <div className="mb-12 flex flex-col items-center gap-4">
           <button
             type="button"
-            onClick={() => {
-              if (requireAuthentication()) {
-                setShowUploadForm(true);
-              }
-            }}
-            className="mb-12 inline-flex items-center rounded-full bg-blue-500 px-8 py-4 text-sm font-semibold tracking-wide text-white shadow-lg shadow-blue-500/40 transition hover:bg-blue-400"
+            onClick={handleUploadClick}
+            className="inline-flex items-center rounded-full bg-blue-500 px-8 py-4 text-sm font-semibold tracking-wide text-white shadow-lg shadow-blue-500/40 transition hover:bg-blue-400"
           >
             Upload Your AI Videos
           </button>
+          <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-[11px] uppercase tracking-[0.3em] text-neutral-400">
+            Categories
+            <select
+              value={selectedCategory}
+              onChange={(event) => setSelectedCategory(event.target.value)}
+              className="rounded-full border border-white/10 bg-black px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white focus:border-blue-500 focus:outline-none"
+              aria-label="Filter videos by category"
+            >
+              {CATEGORIES.map((category) => (
+                <option key={category} value={category} className="bg-black text-white">
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-      <main className="flex-1 px-10 pb-16">
         <section className="mb-12">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-xs uppercase tracking-[0.6em] text-neutral-500">
                 Top Rated
               </h2>
+              <p className="text-sm text-neutral-400">
+                Curated features highlighted for the community.
+              </p>
             </div>
             {isAdmin ? (
               <p className="text-xs text-neutral-500">
@@ -389,6 +488,9 @@ export default function Home() {
               <p className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500">
                 {selectedVideo.viewCount.toLocaleString()} views
               </p>
+              <span className="mt-4 inline-flex items-center rounded-full border border-white/10 px-4 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300">
+                {selectedVideo.category}
+              </span>
               {isAdmin ? (
                 <button
                   type="button"
@@ -414,6 +516,17 @@ export default function Home() {
                   ) : null}
                 </div>
               ) : null}
+              {selectedVideo.tiktokLink ? (
+                <a
+                  href={selectedVideo.tiktokLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-6 inline-flex items-center gap-2 text-xs font-semibold text-blue-400 transition hover:text-blue-300"
+                >
+                  View TikTok clip
+                  <span aria-hidden>↗</span>
+                </a>
+              ) : null}
               <p className="mt-auto text-xs uppercase tracking-[0.3em] text-neutral-500">
                 {new Date(selectedVideo.createdAt).toLocaleDateString()}
               </p>
@@ -434,13 +547,17 @@ export default function Home() {
           onClose={() => setShowUploadForm(false)}
           onSubmit={handleUploadSubmit}
           user={user}
+          categories={CATEGORY_OPTIONS}
         />
       ) : null}
 
       {authPrompt ? (
         <PromptDialog
-          onDismiss={() => setAuthPrompt(false)}
+          onDismiss={handleDismissPrompt}
           onConfirm={handleGoogleSignIn}
+          title={promptCopy.title}
+          description={promptCopy.description}
+          confirmLabel={promptCopy.confirmLabel}
         />
       ) : null}
     </div>
@@ -451,16 +568,24 @@ function UploadModal({
   onClose,
   onSubmit,
   user,
+  categories,
 }: {
   onClose: () => void;
   onSubmit: (payload: UploadPayload) => void;
   user: User;
+  categories: readonly string[];
 }) {
+  const defaultCategory =
+    categories.find((category) => category === DEFAULT_UPLOAD_CATEGORY) ??
+    categories[0] ??
+    DEFAULT_UPLOAD_CATEGORY;
   const [formState, setFormState] = useState<UploadPayload>({
     title: "",
     description: "",
     videoLink: "",
     videoFile: null,
+    category: defaultCategory,
+    tiktokLink: "",
   });
   const [error, setError] = useState<string | null>(null);
   const [hasAgreed, setHasAgreed] = useState(false);
@@ -490,12 +615,15 @@ function UploadModal({
     onSubmit({
       ...formState,
       videoLink: formState.videoLink.trim(),
+      tiktokLink: formState.tiktokLink.trim(),
     });
     setFormState({
       title: "",
       description: "",
       videoLink: "",
       videoFile: null,
+      category: defaultCategory,
+      tiktokLink: "",
     });
     setHasAgreed(false);
   };
@@ -556,6 +684,26 @@ function UploadModal({
           </div>
 
           <label className="flex flex-col gap-3 text-sm">
+            Category
+            <select
+              value={formState.category}
+              onChange={(event) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  category: event.target.value,
+                }))
+              }
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm uppercase tracking-[0.2em] text-white outline-none transition focus:border-blue-500"
+            >
+              {categories.map((category) => (
+                <option key={category} value={category} className="bg-black text-white">
+                  {category}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-3 text-sm">
             Video link (YouTube, Instagram, or direct file URL)
             <input
               value={formState.videoLink}
@@ -566,6 +714,21 @@ function UploadModal({
                 }))
               }
               placeholder="https://www.youtube.com/watch?v=..."
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
+            />
+          </label>
+
+          <label className="flex flex-col gap-3 text-sm">
+            TikTok link (optional)
+            <input
+              value={formState.tiktokLink}
+              onChange={(event) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  tiktokLink: event.target.value,
+                }))
+              }
+              placeholder="https://www.tiktok.com/@creator/video/..."
               className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
             />
           </label>
@@ -661,10 +824,11 @@ function VideoCard({
             Top Rated
           </span>
         ) : null}
+        <span className="mt-3 inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300">
+          {video.category}
+        </span>
         <p
-          className={`text-xs uppercase tracking-[0.3em] text-neutral-500${
-            video.isTopRated ? " mt-3" : ""
-          }`}
+          className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500"
         >
           {video.uploader.name}
         </p>
@@ -681,17 +845,21 @@ function VideoCard({
 function PromptDialog({
   onDismiss,
   onConfirm,
+  title,
+  description,
+  confirmLabel,
 }: {
   onDismiss: () => void;
   onConfirm: () => void;
+  title: string;
+  description: string;
+  confirmLabel: string;
 }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-6">
       <div className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center">
-        <h3 className="text-xl font-semibold tracking-wide">Sign in required</h3>
-        <p className="mt-3 text-sm text-neutral-400">
-          You need to sign in with Google before you can upload your AI videos.
-        </p>
+        <h3 className="text-xl font-semibold tracking-wide">{title}</h3>
+        <p className="mt-3 text-sm text-neutral-400">{description}</p>
         <div className="mt-8 flex flex-wrap justify-center gap-4 text-sm">
           <button
             type="button"
@@ -702,18 +870,41 @@ function PromptDialog({
           </button>
           <button
             type="button"
-            onClick={() => {
-              onDismiss();
-              onConfirm();
-            }}
+            onClick={onConfirm}
             className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-6 py-3 font-semibold text-white transition hover:bg-blue-400"
           >
             <GoogleIcon small />
-            Sign in with Google
+            {confirmLabel}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg
+      className="size-6"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12 12.75c2.347 0 4.25-1.903 4.25-4.25S14.347 4.25 12 4.25 7.75 6.153 7.75 8.5 9.653 12.75 12 12.75Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.5 19.75v-.5a4.75 4.75 0 0 1 4.75-4.75h3.5a4.75 4.75 0 0 1 4.75 4.75v.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
