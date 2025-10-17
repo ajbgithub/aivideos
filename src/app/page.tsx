@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  CATEGORY_OPTIONS,
+  INITIAL_VIDEOS,
+  type StoredVideo,
+  type VideoSource,
+} from "@/data/initialVideos";
 import { supabase } from "@/lib/supabaseClient";
 import type { User as SupabaseAuthUser } from "@supabase/supabase-js";
 import {
@@ -17,24 +23,7 @@ type User = {
   email: string;
 };
 
-type VideoSource = "file" | "youtube" | "instagram" | "tiktok" | "external";
-
-type Video = {
-  id: string;
-  title?: string;
-  description?: string;
-  url: string;
-  source: VideoSource;
-  uploader: {
-    name: string;
-    email: string;
-  };
-  createdAt: string;
-  viewCount: number;
-  isTopRated: boolean;
-  categories: string[];
-  fullName?: string;
-};
+type Video = StoredVideo;
 
 type UploadPayload = {
   title: string;
@@ -45,191 +34,11 @@ type UploadPayload = {
   fullName: string;
 };
 
-const CATEGORY_OPTIONS = [
-  "Animals",
-  "Action",
-  "Cats",
-  "Dogs",
-  "Drama",
-  "Fashion & Style",
-  "Films",
-  "Fitness & Health",
-  "Food & Recipes",
-  "Funnies",
-  "Inspirational",
-  "Lifestyle & Travel",
-  "Memes",
-  "Music Videos",
-  "News",
-  "Other",
-  "Podcasts",
-  "Pop Icons",
-  "Romance",
-  "Tech & Gadgets",
-  "TV",
-] as const;
-
 const CATEGORIES = ["All", ...CATEGORY_OPTIONS];
 const DEFAULT_UPLOAD_CATEGORIES: string[] = [CATEGORY_OPTIONS[0]];
 const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB
 
-const initialVideos: Video[] = [
-  {
-    id: "vid-ea-01",
-    title: "Thunder - Wharton Vets Gala",
-    description: "Live performance highlight from the Wharton Vets Gala showcase.",
-    url: "https://www.youtube.com/embed/VIDEO_ID_THUNDER",
-    source: "youtube",
-    uploader: { name: "Andrew J. Bilden", email: "eagleentertainmentai@gmail.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 24580,
-    isTopRated: true,
-    categories: ["Music Videos", "Inspirational", "Films"],
-    fullName: "Andrew J. Bilden",
-  },
-  {
-    id: "vid-ea-02",
-    title: "Newport '83",
-    description: "Vintage-inspired visuals celebrating coastal life in Newport.",
-    url: "https://www.youtube.com/embed/VIDEO_ID_NEWPORT83",
-    source: "youtube",
-    uploader: { name: "Andrew J. Bilden", email: "eagleentertainmentai@gmail.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 18740,
-    isTopRated: true,
-    categories: ["Films", "Lifestyle & Travel", "Music Videos"],
-    fullName: "Andrew J. Bilden",
-  },
-  {
-    id: "vid-ea-03",
-    title: "White Paper Fan Teaser",
-    description: "Teaser reel for the upcoming White Paper Fan release.",
-    url: "https://www.youtube.com/embed/VIDEO_ID_WHITEPAPER",
-    source: "youtube",
-    uploader: { name: "Andrew J. Bilden", email: "eagleentertainmentai@gmail.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 16320,
-    isTopRated: true,
-    categories: ["Action", "Films", "Tech & Gadgets"],
-    fullName: "Andrew J. Bilden",
-  },
-  {
-    id: "vid-27",
-    title: "Dreamscapes in Motion",
-    description: "AI-generated concept art stitched into a short teaser.",
-    url: "https://www.youtube.com/embed/J---aiyznGQ",
-    source: "youtube",
-    uploader: { name: "Maya Chen", email: "maya.chen@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 18230,
-    isTopRated: false,
-    categories: ["Films", "Inspirational", "Tech & Gadgets"],
-    fullName: "Maya Chen",
-  },
-  {
-    id: "vid-28",
-    title: "Fashion Loop",
-    description: "Short form Instagram reel showcasing AI-styled outfits.",
-    url: "https://www.instagram.com/p/Cx123456789/embed",
-    source: "instagram",
-    uploader: { name: "Elijah Cole", email: "elijah.cole@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 12104,
-    isTopRated: false,
-    categories: ["Fashion & Style", "Lifestyle & Travel"],
-    fullName: "Elijah Cole",
-  },
-  {
-    id: "vid-29",
-    title: "Concept Car Reveal",
-    description: "Text-to-video exploration of futuristic automotive lines.",
-    url: "https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4",
-    source: "external",
-    uploader: { name: "Noor Vega", email: "noor.vega@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 8541,
-    isTopRated: false,
-    categories: ["Tech & Gadgets", "Action", "Lifestyle & Travel"],
-    fullName: "Noor Vega",
-  },
-  {
-    id: "vid-30",
-    title: "Neon Skyline",
-    url: "https://www.youtube.com/embed/aqz-KE-bpKQ",
-    source: "youtube",
-    uploader: { name: "Kira Holt", email: "kira.holt@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 15309,
-    isTopRated: false,
-    categories: ["Music Videos", "Lifestyle & Travel"],
-    fullName: "Kira Holt",
-  },
-  {
-    id: "vid-31",
-    title: "AI Painter Study",
-    description: "Time-lapse of an AI assistant reimagining still photography.",
-    url: "https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4",
-    source: "external",
-    uploader: { name: "Roman Bell", email: "roman.bell@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 6542,
-    isTopRated: false,
-    categories: ["Inspirational", "Other"],
-    fullName: "Roman Bell",
-  },
-  {
-    id: "vid-32",
-    title: "Robotic Choreography",
-    description: "Procedurally generated dance loops synced to music.",
-    url: "https://www.youtube.com/embed/lTTajzrSkCw",
-    source: "youtube",
-    uploader: { name: "Iris Navarre", email: "iris.navarre@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 9978,
-    isTopRated: false,
-    categories: ["Music Videos", "Tech & Gadgets"],
-    fullName: "Iris Navarre",
-  },
-  {
-    id: "vid-33",
-    title: "Urban Paws",
-    description: "Documenting city adventures with AI-generated pets.",
-    url: "https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4",
-    source: "external",
-    uploader: { name: "Theo Marsh", email: "theo.marsh@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 4412,
-    isTopRated: false,
-    categories: ["Animals", "Cats", "Dogs"],
-    fullName: "Theo Marsh",
-  },
-  {
-    id: "vid-34",
-    title: "AI Storyboards",
-    description: "Generated stills sequenced into a motion storyboard.",
-    url: "https://www.youtube.com/embed/w86L6_0hN0E",
-    source: "youtube",
-    uploader: { name: "Lena Ortiz", email: "lena.ortiz@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 11221,
-    isTopRated: false,
-    categories: ["Films", "Drama"],
-    fullName: "Lena Ortiz",
-  },
-  {
-    id: "vid-35",
-    title: "Diffusion Motion Study",
-    description: "Testing stability of diffusion-based motion models.",
-    url: "https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4",
-    source: "external",
-    uploader: { name: "Zara Finn", email: "zara.finn@example.com" },
-    createdAt: new Date().toISOString(),
-    viewCount: 5230,
-    isTopRated: false,
-    categories: ["Tech & Gadgets", "Other"],
-    fullName: "Zara Finn",
-  },
-];
+const initialVideos: Video[] = INITIAL_VIDEOS.map((video) => ({ ...video }));
 
 const ADMIN_EMAIL = "mbamoveteam@gmail.com";
 
@@ -244,6 +53,7 @@ export default function Home() {
     useState<"upload" | "profile">("upload");
   const [authError, setAuthError] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [showAboutDialog, setShowAboutDialog] = useState(false);
   const objectUrls = useRef<Set<string>>(new Set());
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasInitialisedSelection = useRef(false);
@@ -507,8 +317,12 @@ export default function Home() {
         return;
       }
 
-      const baseUrl = `${window.location.origin}${window.location.pathname}`;
-      const shareUrl = `${baseUrl}?video=${encodeURIComponent(video.id)}`;
+      const baseUrl = window.location.origin;
+      const useRuntimeModal =
+        video.source === "file" || video.url.startsWith("blob:");
+      const shareUrl = useRuntimeModal
+        ? `${baseUrl}${window.location.pathname}?video=${encodeURIComponent(video.id)}`
+        : `${baseUrl}/video/${encodeURIComponent(video.id)}`;
       const clipboardText = `Hey, check out this video on aihomestudios! ${shareUrl}`;
 
       try {
@@ -583,13 +397,17 @@ export default function Home() {
     [user, videos]
   );
 
+  const regularVideos = useMemo(
+    () => videos.filter((video) => !video.isTopRated),
+    [videos]
+  );
   const videosToDisplay = useMemo(() => {
     if (selectedCategory === "All") {
-      return videos;
+      return regularVideos;
     }
 
-    return videos.filter((video) => video.categories.includes(selectedCategory));
-  }, [selectedCategory, videos]);
+    return regularVideos.filter((video) => video.categories.includes(selectedCategory));
+  }, [regularVideos, selectedCategory]);
   const topRatedVideos = useMemo(
     () => videos.filter((video) => video.isTopRated),
     [videos]
@@ -639,14 +457,18 @@ export default function Home() {
       ) : null}
       <header className="flex items-start justify-between px-10 py-10">
         <div>
-          <span className="block text-xs uppercase tracking-[0.6em] text-neutral-500">
+          <button
+            type="button"
+            onClick={() => setShowAboutDialog(true)}
+            className="mt-2 inline-flex items-center text-xs uppercase tracking-[0.6em] text-neutral-500 transition hover:text-white"
+          >
             AI Home Studios
-          </span>
-          <h1 className="mt-4 whitespace-nowrap text-4xl font-semibold tracking-wide sm:text-5xl">
+          </button>
+          <h1 className="mt-3 whitespace-nowrap text-4xl font-semibold tracking-wide text-white sm:text-5xl">
             AI Videos
           </h1>
           <p className="mt-3 text-sm text-neutral-400">
-            Highlighting the work of AI video creators in one tool agnostic place
+            Highlighting the work of AI creators in one place
           </p>
         </div>
 
@@ -738,6 +560,14 @@ export default function Home() {
             </p>
           )}
         </section>
+        <section className="mb-6">
+          <h2 className="text-xs uppercase tracking-[0.6em] text-neutral-500">
+            Community
+          </h2>
+          <p className="mt-2 text-sm text-neutral-400">
+            Fresh uploads and discoveries from across AI Home Studios.
+          </p>
+        </section>
         <section className="flex h-[calc(100vh-240px)] gap-8">
           <div className="flex-1 overflow-hidden">
             <div className="grid h-full grid-cols-1 gap-6 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
@@ -756,12 +586,15 @@ export default function Home() {
           {selectedVideo ? (
             <aside className="hidden w-full max-w-sm flex-col rounded-3xl border border-white/10 bg-white/[0.06] px-8 py-10 backdrop-blur md:flex">
               <span className="text-xs uppercase tracking-[0.4em] text-neutral-500">
-                uploaded by
+                Featured video
               </span>
               <h2 className="mt-6 text-3xl font-semibold tracking-wide">
-                {selectedVideo.uploader.name}
+                {selectedVideo.title ?? "Untitled Upload"}
               </h2>
-              <p className="mt-2 text-sm text-neutral-300">
+              <p className="mt-3 text-sm text-neutral-300">
+                {selectedVideo.fullName ?? toTitleCase(selectedVideo.uploader.name)}
+              </p>
+              <p className="text-xs text-neutral-500">
                 {selectedVideo.uploader.email}
               </p>
               <p className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500">
@@ -777,18 +610,13 @@ export default function Home() {
                   </span>
                 ))}
               </div>
-              {selectedVideo.fullName ? (
-                <p className="mt-4 text-sm text-neutral-300">
-                  {selectedVideo.fullName}
-                </p>
-              ) : null}
               <button
                 type="button"
                 onClick={() => handleShareVideo(selectedVideo)}
                 className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
               >
                 <ShareIcon small />
-                Copy share link
+                Share
               </button>
               {isAdmin ? (
                 <button
@@ -805,15 +633,10 @@ export default function Home() {
                     : "Feature in Top Rated"}
                 </button>
               ) : null}
-              {selectedVideo.title ? (
-                <div className="mt-8">
-                  <h3 className="text-lg font-medium">{selectedVideo.title}</h3>
-                  {selectedVideo.description ? (
-                    <p className="mt-2 text-sm leading-relaxed text-neutral-300">
-                      {selectedVideo.description}
-                    </p>
-                  ) : null}
-                </div>
+              {selectedVideo.description ? (
+                <p className="mt-6 text-sm leading-relaxed text-neutral-300">
+                  {selectedVideo.description}
+                </p>
               ) : null}
               <p className="mt-auto text-xs uppercase tracking-[0.3em] text-neutral-500">
                 {new Date(selectedVideo.createdAt).toLocaleDateString()}
@@ -848,6 +671,9 @@ export default function Home() {
           confirmLabel={promptCopy.confirmLabel}
           errorMessage={authError}
         />
+      ) : null}
+      {showAboutDialog ? (
+        <AboutDialog onClose={() => setShowAboutDialog(false)} />
       ) : null}
     </div>
   );
@@ -910,7 +736,7 @@ function UploadModal({
   const initialCategorySelection =
     defaultCategories.length > 0
       ? [...defaultCategories]
-      : Array.from(categories).slice(0, Math.min(3, categories.length));
+      : [...categories].slice(0, Math.min(3, categories.length));
   const [formState, setFormState] = useState<UploadPayload>({
     title: "",
     description: "",
@@ -1233,6 +1059,9 @@ function VideoCard({
   onSelect: () => void;
   onShare: () => void;
 }) {
+  const displayTitle = video.title ?? "Untitled Upload";
+  const displayName = video.fullName ?? toTitleCase(video.uploader.name);
+
   return (
     <article
       className={`relative flex cursor-pointer flex-col rounded-3xl border ${
@@ -1278,7 +1107,7 @@ function VideoCard({
           onShare();
         }}
         className="absolute bottom-4 right-4 flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:border-white hover:bg-white/20"
-        aria-label="Copy share link"
+        aria-label="Share video link"
       >
         <ShareIcon />
       </button>
@@ -1288,6 +1117,10 @@ function VideoCard({
             Top Rated
           </span>
         ) : null}
+        <h3 className="mt-3 text-lg font-medium">{displayTitle}</h3>
+        <p className="mt-2 text-xs uppercase tracking-[0.3em] text-neutral-500">
+          {displayName}
+        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {video.categories.map((category) => (
             <span
@@ -1298,19 +1131,6 @@ function VideoCard({
             </span>
           ))}
         </div>
-        {video.fullName ? (
-          <p className="mt-2 text-xs text-neutral-400">{video.fullName}</p>
-        ) : null}
-        <p
-          className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500"
-        >
-          {video.uploader.name}
-        </p>
-        {video.title ? (
-          <h3 className="mt-2 text-lg font-medium">{video.title}</h3>
-        ) : (
-          <h3 className="mt-2 text-lg font-medium text-neutral-400">Untitled Upload</h3>
-        )}
       </div>
     </article>
   );
@@ -1374,6 +1194,38 @@ function PromptDialog({
             {confirmLabel}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AboutDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center shadow-2xl">
+        <h3 className="text-xl font-semibold tracking-wide">About Us</h3>
+        <p className="mt-4 text-sm text-neutral-300">
+          Welcome to the studio! We&apos;re here to highlight AI content in a quickly
+          evolving entertainment space.
+        </p>
+        <p className="mt-4 text-sm text-neutral-300">
+          —{" "}
+          <a
+            href="https://www.linkedin.com/in/andrewjbilden/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-300 underline decoration-dotted underline-offset-2 hover:text-blue-200"
+          >
+            Andrew J. Bilden
+          </a>
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-8 inline-flex items-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
+        >
+          Close
+        </button>
       </div>
     </div>
   );
