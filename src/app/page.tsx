@@ -2,14 +2,22 @@
 
 import { supabase } from "@/lib/supabaseClient";
 import type { User as SupabaseAuthUser } from "@supabase/supabase-js";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type User = {
   name: string;
   email: string;
 };
 
-type VideoSource = "file" | "youtube" | "instagram" | "external";
+type VideoSource = "file" | "youtube" | "instagram" | "tiktok" | "external";
 
 type Video = {
   id: string;
@@ -24,8 +32,8 @@ type Video = {
   createdAt: string;
   viewCount: number;
   isTopRated: boolean;
-  category: string;
-  tiktokLink?: string;
+  categories: string[];
+  fullName?: string;
 };
 
 type UploadPayload = {
@@ -33,26 +41,78 @@ type UploadPayload = {
   description: string;
   videoLink: string;
   videoFile: File | null;
-  category: string;
-  tiktokLink: string;
+  categories: string[];
+  fullName: string;
 };
 
 const CATEGORY_OPTIONS = [
   "Animals",
+  "Action",
   "Cats",
   "Dogs",
+  "Drama",
+  "Fashion & Style",
   "Films",
+  "Fitness & Health",
+  "Food & Recipes",
+  "Funnies",
+  "Inspirational",
+  "Lifestyle & Travel",
+  "Memes",
   "Music Videos",
   "News",
+  "Other",
   "Podcasts",
-  "Pop-Icons",
+  "Pop Icons",
+  "Romance",
+  "Tech & Gadgets",
   "TV",
 ] as const;
 
 const CATEGORIES = ["All", ...CATEGORY_OPTIONS];
-const DEFAULT_UPLOAD_CATEGORY = "Films";
+const DEFAULT_UPLOAD_CATEGORIES: string[] = [CATEGORY_OPTIONS[0]];
+const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB
 
 const initialVideos: Video[] = [
+  {
+    id: "vid-ea-01",
+    title: "Thunder - Wharton Vets Gala",
+    description: "Live performance highlight from the Wharton Vets Gala showcase.",
+    url: "https://www.youtube.com/embed/VIDEO_ID_THUNDER",
+    source: "youtube",
+    uploader: { name: "Andrew J. Bilden", email: "eagleentertainmentai@gmail.com" },
+    createdAt: new Date().toISOString(),
+    viewCount: 24580,
+    isTopRated: true,
+    categories: ["Music Videos", "Inspirational", "Films"],
+    fullName: "Andrew J. Bilden",
+  },
+  {
+    id: "vid-ea-02",
+    title: "Newport '83",
+    description: "Vintage-inspired visuals celebrating coastal life in Newport.",
+    url: "https://www.youtube.com/embed/VIDEO_ID_NEWPORT83",
+    source: "youtube",
+    uploader: { name: "Andrew J. Bilden", email: "eagleentertainmentai@gmail.com" },
+    createdAt: new Date().toISOString(),
+    viewCount: 18740,
+    isTopRated: true,
+    categories: ["Films", "Lifestyle & Travel", "Music Videos"],
+    fullName: "Andrew J. Bilden",
+  },
+  {
+    id: "vid-ea-03",
+    title: "White Paper Fan Teaser",
+    description: "Teaser reel for the upcoming White Paper Fan release.",
+    url: "https://www.youtube.com/embed/VIDEO_ID_WHITEPAPER",
+    source: "youtube",
+    uploader: { name: "Andrew J. Bilden", email: "eagleentertainmentai@gmail.com" },
+    createdAt: new Date().toISOString(),
+    viewCount: 16320,
+    isTopRated: true,
+    categories: ["Action", "Films", "Tech & Gadgets"],
+    fullName: "Andrew J. Bilden",
+  },
   {
     id: "vid-27",
     title: "Dreamscapes in Motion",
@@ -62,8 +122,9 @@ const initialVideos: Video[] = [
     uploader: { name: "Maya Chen", email: "maya.chen@example.com" },
     createdAt: new Date().toISOString(),
     viewCount: 18230,
-    isTopRated: true,
-    category: "Films",
+    isTopRated: false,
+    categories: ["Films", "Inspirational", "Tech & Gadgets"],
+    fullName: "Maya Chen",
   },
   {
     id: "vid-28",
@@ -74,8 +135,9 @@ const initialVideos: Video[] = [
     uploader: { name: "Elijah Cole", email: "elijah.cole@example.com" },
     createdAt: new Date().toISOString(),
     viewCount: 12104,
-    isTopRated: true,
-    category: "Pop-Icons",
+    isTopRated: false,
+    categories: ["Fashion & Style", "Lifestyle & Travel"],
+    fullName: "Elijah Cole",
   },
   {
     id: "vid-29",
@@ -87,7 +149,8 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 8541,
     isTopRated: false,
-    category: "Films",
+    categories: ["Tech & Gadgets", "Action", "Lifestyle & Travel"],
+    fullName: "Noor Vega",
   },
   {
     id: "vid-30",
@@ -97,8 +160,9 @@ const initialVideos: Video[] = [
     uploader: { name: "Kira Holt", email: "kira.holt@example.com" },
     createdAt: new Date().toISOString(),
     viewCount: 15309,
-    isTopRated: true,
-    category: "Music Videos",
+    isTopRated: false,
+    categories: ["Music Videos", "Lifestyle & Travel"],
+    fullName: "Kira Holt",
   },
   {
     id: "vid-31",
@@ -110,7 +174,8 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 6542,
     isTopRated: false,
-    category: "News",
+    categories: ["Inspirational", "Other"],
+    fullName: "Roman Bell",
   },
   {
     id: "vid-32",
@@ -122,17 +187,21 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 9978,
     isTopRated: false,
-    category: "Music Videos",
+    categories: ["Music Videos", "Tech & Gadgets"],
+    fullName: "Iris Navarre",
   },
   {
     id: "vid-33",
+    title: "Urban Paws",
+    description: "Documenting city adventures with AI-generated pets.",
     url: "https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4",
     source: "external",
     uploader: { name: "Theo Marsh", email: "theo.marsh@example.com" },
     createdAt: new Date().toISOString(),
     viewCount: 4412,
     isTopRated: false,
-    category: "Animals",
+    categories: ["Animals", "Cats", "Dogs"],
+    fullName: "Theo Marsh",
   },
   {
     id: "vid-34",
@@ -144,10 +213,12 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 11221,
     isTopRated: false,
-    category: "Films",
+    categories: ["Films", "Drama"],
+    fullName: "Lena Ortiz",
   },
   {
     id: "vid-35",
+    title: "Diffusion Motion Study",
     description: "Testing stability of diffusion-based motion models.",
     url: "https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4",
     source: "external",
@@ -155,7 +226,8 @@ const initialVideos: Video[] = [
     createdAt: new Date().toISOString(),
     viewCount: 5230,
     isTopRated: false,
-    category: "Podcasts",
+    categories: ["Tech & Gadgets", "Other"],
+    fullName: "Zara Finn",
   },
 ];
 
@@ -171,7 +243,10 @@ export default function Home() {
   const [authPromptContext, setAuthPromptContext] =
     useState<"upload" | "profile">("upload");
   const [authError, setAuthError] = useState<string | null>(null);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
   const objectUrls = useRef<Set<string>>(new Set());
+  const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasInitialisedSelection = useRef(false);
 
   useEffect(() => {
     const urls = objectUrls.current;
@@ -179,6 +254,9 @@ export default function Home() {
     return () => {
       urls.forEach((url) => URL.revokeObjectURL(url));
       urls.clear();
+      if (shareTimeoutRef.current) {
+        clearTimeout(shareTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -272,6 +350,49 @@ export default function Home() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || hasInitialisedSelection.current) {
+      return;
+    }
+
+    if (!videos.length) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const videoId = params.get("video");
+
+    if (videoId) {
+      const matchingVideo = videos.find((video) => video.id === videoId);
+
+      if (matchingVideo) {
+        setSelectedVideo(matchingVideo);
+      }
+    }
+
+    hasInitialisedSelection.current = true;
+  }, [videos]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!hasInitialisedSelection.current && !selectedVideo) {
+      return;
+    }
+
+    const url = new URL(window.location.toString());
+
+    if (selectedVideo) {
+      url.searchParams.set("video", selectedVideo.id);
+    } else {
+      url.searchParams.delete("video");
+    }
+
+    window.history.replaceState({}, "", url.toString());
+  }, [selectedVideo]);
 
   const isAuthenticated = Boolean(user);
   const isAdmin = user?.email === ADMIN_EMAIL;
@@ -367,6 +488,43 @@ export default function Home() {
     }
   }, []);
 
+  const showShareNotice = useCallback((message: string) => {
+    setShareNotice(message);
+
+    if (shareTimeoutRef.current) {
+      clearTimeout(shareTimeoutRef.current);
+    }
+
+    shareTimeoutRef.current = setTimeout(() => {
+      setShareNotice(null);
+      shareTimeoutRef.current = null;
+    }, 2000);
+  }, []);
+
+  const handleShareVideo = useCallback(
+    async (video: Video) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const baseUrl = `${window.location.origin}${window.location.pathname}`;
+      const shareUrl = `${baseUrl}?video=${encodeURIComponent(video.id)}`;
+      const clipboardText = `Hey, check out this video on aihomestudios! ${shareUrl}`;
+
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(clipboardText);
+          showShareNotice("Share link copied!");
+        } else {
+          throw new Error("Clipboard API unavailable");
+        }
+      } catch {
+        window.prompt("Copy this link and share it:", clipboardText);
+      }
+    },
+    [showShareNotice]
+  );
+
   const handleUploadSubmit = useCallback(
     (payload: UploadPayload) => {
       if (!user || (!payload.videoFile && !payload.videoLink)) {
@@ -375,6 +533,8 @@ export default function Home() {
 
       const nextVideos = [...videos];
       const now = new Date().toISOString();
+      const trimmedFullName = payload.fullName.trim();
+      const displayName = trimmedFullName || user.name;
 
       if (payload.videoFile) {
         const objectUrl = URL.createObjectURL(payload.videoFile);
@@ -387,14 +547,14 @@ export default function Home() {
           url: objectUrl,
           source: "file",
           uploader: {
-            name: user.name,
+            name: displayName,
             email: user.email,
           },
           createdAt: now,
           viewCount: 0,
           isTopRated: false,
-          category: payload.category,
-          tiktokLink: payload.tiktokLink ? payload.tiktokLink : undefined,
+          categories: [...payload.categories],
+          fullName: trimmedFullName || undefined,
         });
       } else if (payload.videoLink) {
         const { url, source } = normaliseLink(payload.videoLink);
@@ -406,14 +566,14 @@ export default function Home() {
           url,
           source,
           uploader: {
-            name: user.name,
+            name: displayName,
             email: user.email,
           },
           createdAt: now,
           viewCount: 0,
           isTopRated: false,
-          category: payload.category,
-          tiktokLink: payload.tiktokLink ? payload.tiktokLink : undefined,
+          categories: [...payload.categories],
+          fullName: trimmedFullName || undefined,
         });
       }
 
@@ -428,7 +588,7 @@ export default function Home() {
       return videos;
     }
 
-    return videos.filter((video) => video.category === selectedCategory);
+    return videos.filter((video) => video.categories.includes(selectedCategory));
   }, [selectedCategory, videos]);
   const topRatedVideos = useMemo(
     () => videos.filter((video) => video.isTopRated),
@@ -470,12 +630,21 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col bg-black text-white">
+      {shareNotice ? (
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center px-4">
+          <div className="pointer-events-auto rounded-full border border-white/20 bg-white/10 px-6 py-3 text-sm font-medium text-white shadow-lg backdrop-blur">
+            {shareNotice}
+          </div>
+        </div>
+      ) : null}
       <header className="flex items-start justify-between px-10 py-10">
         <div>
           <span className="block text-xs uppercase tracking-[0.6em] text-neutral-500">
             AI Home Studios
           </span>
-          <h1 className="mt-4 text-5xl font-semibold tracking-wide">AI Videos</h1>
+          <h1 className="mt-4 whitespace-nowrap text-4xl font-semibold tracking-wide sm:text-5xl">
+            AI Videos
+          </h1>
           <p className="mt-3 text-sm text-neutral-400">
             Highlighting the work of AI video creators in one tool agnostic place
           </p>
@@ -558,6 +727,7 @@ export default function Home() {
                   video={video}
                   isActive={selectedVideo?.id === video.id}
                   onSelect={() => setSelectedVideo(video)}
+                  onShare={() => handleShareVideo(video)}
                 />
               ))}
             </div>
@@ -577,6 +747,7 @@ export default function Home() {
                   video={video}
                   isActive={selectedVideo?.id === video.id}
                   onSelect={() => setSelectedVideo(video)}
+                  onShare={() => handleShareVideo(video)}
                 />
               ))}
             </div>
@@ -596,9 +767,29 @@ export default function Home() {
               <p className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500">
                 {selectedVideo.viewCount.toLocaleString()} views
               </p>
-              <span className="mt-4 inline-flex items-center rounded-full border border-white/10 px-4 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300">
-                {selectedVideo.category}
-              </span>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {selectedVideo.categories.map((category) => (
+                  <span
+                    key={`${selectedVideo.id}-${category}`}
+                    className="inline-flex items-center rounded-full border border-white/10 px-4 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300"
+                  >
+                    {category}
+                  </span>
+                ))}
+              </div>
+              {selectedVideo.fullName ? (
+                <p className="mt-4 text-sm text-neutral-300">
+                  {selectedVideo.fullName}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => handleShareVideo(selectedVideo)}
+                className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
+              >
+                <ShareIcon small />
+                Copy share link
+              </button>
               {isAdmin ? (
                 <button
                   type="button"
@@ -623,17 +814,6 @@ export default function Home() {
                     </p>
                   ) : null}
                 </div>
-              ) : null}
-              {selectedVideo.tiktokLink ? (
-                <a
-                  href={selectedVideo.tiktokLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-6 inline-flex items-center gap-2 text-xs font-semibold text-blue-400 transition hover:text-blue-300"
-                >
-                  View TikTok clip
-                  <span aria-hidden>↗</span>
-                </a>
               ) : null}
               <p className="mt-auto text-xs uppercase tracking-[0.3em] text-neutral-500">
                 {new Date(selectedVideo.createdAt).toLocaleDateString()}
@@ -723,20 +903,84 @@ function UploadModal({
   user: User;
   categories: readonly string[];
 }) {
-  const defaultCategory =
-    categories.find((category) => category === DEFAULT_UPLOAD_CATEGORY) ??
-    categories[0] ??
-    DEFAULT_UPLOAD_CATEGORY;
+  const defaultCategories =
+    DEFAULT_UPLOAD_CATEGORIES.filter((category) =>
+      categories.includes(category)
+    );
+  const initialCategorySelection =
+    defaultCategories.length > 0
+      ? [...defaultCategories]
+      : Array.from(categories).slice(0, Math.min(3, categories.length));
   const [formState, setFormState] = useState<UploadPayload>({
     title: "",
     description: "",
     videoLink: "",
     videoFile: null,
-    category: defaultCategory,
-    tiktokLink: "",
+    categories: [...initialCategorySelection],
+    fullName: user.name,
   });
   const [error, setError] = useState<string | null>(null);
   const [hasAgreed, setHasAgreed] = useState(false);
+  const hasVideoLink = Boolean(formState.videoLink.trim());
+  const hasVideoFile = Boolean(formState.videoFile);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const linkInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleToggleCategory = (category: string) => {
+    setFormState((prev) => {
+      const alreadySelected = prev.categories.includes(category);
+
+      if (alreadySelected) {
+        const nextCategories = prev.categories.filter((item) => item !== category);
+        setError(null);
+        return { ...prev, categories: nextCategories };
+      }
+
+      if (prev.categories.length >= 3) {
+        setError("Choose up to three categories.");
+        return prev;
+      }
+
+      setError(null);
+      return { ...prev, categories: [...prev.categories, category] };
+    });
+  };
+
+  const handleLinkInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value;
+    setError(null);
+
+    setFormState((prev) => ({
+      ...prev,
+      videoLink: nextValue,
+      videoFile: nextValue ? null : prev.videoFile,
+    }));
+
+    if (nextValue && fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] ?? null;
+
+    if (nextFile && nextFile.size > MAX_FILE_SIZE_BYTES) {
+      setError("Video file must be 1 GB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    setError(null);
+    setFormState((prev) => ({
+      ...prev,
+      videoFile: nextFile,
+      videoLink: nextFile ? "" : prev.videoLink,
+    }));
+
+    if (nextFile && linkInputRef.current) {
+      linkInputRef.current.value = "";
+    }
+  };
 
   const handleClose = () => {
     setHasAgreed(false);
@@ -747,8 +991,23 @@ function UploadModal({
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (formState.categories.length === 0) {
+      setError("Choose at least one category.");
+      return;
+    }
+
+    if (formState.videoFile && formState.videoLink.trim()) {
+      setError("Choose either a video link or a video file, not both.");
+      return;
+    }
+
     if (!formState.videoFile && !formState.videoLink.trim()) {
       setError("Choose a video file or provide a trusted link.");
+      return;
+    }
+
+    if (formState.videoFile && formState.videoFile.size > MAX_FILE_SIZE_BYTES) {
+      setError("Video file must be 1 GB or smaller.");
       return;
     }
 
@@ -763,28 +1022,30 @@ function UploadModal({
     onSubmit({
       ...formState,
       videoLink: formState.videoLink.trim(),
-      tiktokLink: formState.tiktokLink.trim(),
+      fullName: formState.fullName.trim(),
     });
     setFormState({
       title: "",
       description: "",
       videoLink: "",
       videoFile: null,
-      category: defaultCategory,
-      tiktokLink: "",
+      categories: [...initialCategorySelection],
+      fullName: user.name,
     });
     setHasAgreed(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-      <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-black px-10 py-12 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-6">
+      <div className="mx-auto w-full max-w-2xl rounded-3xl border border-white/10 bg-black px-6 py-10 shadow-2xl sm:px-10 sm:py-12 max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-semibold tracking-wide">
               Upload Your AI Video
             </h2>
-            <p className="mt-2 text-sm text-neutral-400">Signed in as {user.email}</p>
+            <p className="mt-2 text-sm text-neutral-400">
+              Signed in as {user.email}. This address will be displayed with your video.
+            </p>
           </div>
           <button
             type="button"
@@ -797,9 +1058,26 @@ function UploadModal({
         </div>
 
         <form className="mt-10 space-y-6" onSubmit={handleSubmit}>
+          <label className="flex flex-col gap-2 text-sm">
+            Your full name
+            <input
+              value={formState.fullName}
+              onChange={(event) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  fullName: event.target.value,
+                }))
+              }
+              placeholder="Jordan Smith"
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
+              maxLength={100}
+              autoComplete="name"
+            />
+          </label>
+
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <label className="flex flex-col gap-2 text-sm">
-              Optional title
+              Title
               <input
                 value={formState.title}
                 onChange={(event) =>
@@ -812,10 +1090,10 @@ function UploadModal({
                 className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
                 maxLength={80}
               />
-            </label>
+              </label>
 
             <label className="flex flex-col gap-2 text-sm">
-              Optional description
+              Description
               <input
                 value={formState.description}
                 onChange={(event) =>
@@ -831,71 +1109,59 @@ function UploadModal({
             </label>
           </div>
 
-          <label className="flex flex-col gap-3 text-sm">
-            Category
-            <select
-              value={formState.category}
-              onChange={(event) =>
-                setFormState((prev) => ({
-                  ...prev,
-                  category: event.target.value,
-                }))
-              }
-              className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm uppercase tracking-[0.2em] text-white outline-none transition focus:border-blue-500"
-            >
-              {categories.map((category) => (
-                <option key={category} value={category} className="bg-black text-white">
-                  {category}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex flex-col gap-3 text-sm">
+            Categories (choose up to 3)
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {categories.map((category) => {
+                const isSelected = formState.categories.includes(category);
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => handleToggleCategory(category)}
+                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+                      isSelected
+                        ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                        : "border-white/10 bg-white/[0.04] text-neutral-200 hover:border-white/30"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <label className="flex flex-col gap-3 text-sm">
-            Video link (YouTube, Instagram, or direct file URL)
+            Video link (YouTube, Instagram, TikTok, or file URL)
             <input
               value={formState.videoLink}
-              onChange={(event) =>
-                setFormState((prev) => ({
-                  ...prev,
-                  videoLink: event.target.value,
-                }))
-              }
+              onChange={handleLinkInputChange}
               placeholder="https://www.youtube.com/watch?v=..."
               className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
+              disabled={hasVideoFile}
+              ref={linkInputRef}
             />
-          </label>
-
-          <label className="flex flex-col gap-3 text-sm">
-            TikTok link (optional)
-            <input
-              value={formState.tiktokLink}
-              onChange={(event) =>
-                setFormState((prev) => ({
-                  ...prev,
-                  tiktokLink: event.target.value,
-                }))
-              }
-              placeholder="https://www.tiktok.com/@creator/video/..."
-              className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
-            />
+            <span className="text-xs text-neutral-500">
+              Paste a link to feature your hosted video. Adding a link disables file uploads.
+            </span>
           </label>
 
           <div className="flex items-center gap-4">
             <span className="text-sm text-neutral-500">or</span>
             <label className="flex w-full flex-col gap-3 text-sm">
-              Upload a video file
+              Upload a video file (max 1 GB)
               <input
                 type="file"
                 accept="video/*"
-                onChange={(event) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    videoFile: event.target.files?.[0] ?? null,
-                  }))
-                }
+                onChange={handleFileInputChange}
                 className="cursor-pointer rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-4 py-10 text-center text-neutral-400 transition hover:border-white"
+                disabled={hasVideoLink}
+                ref={fileInputRef}
               />
+              <span className="text-xs text-neutral-500">
+                Uploads are disabled when a video link is provided.
+              </span>
             </label>
           </div>
 
@@ -907,13 +1173,32 @@ function UploadModal({
               className="mt-1 size-4 cursor-pointer rounded border border-white/20 bg-white/[0.02]"
             />
             <span>
-              By uploading to this site, I acknowledge that AI Videos may
-              republish and credit my work on social media, but does not claim
-              ownership or copyright of my video.
+              By uploading to this site, I acknowledge this work as my own, and credit
+              other artists where appropriate. I acknowledge AI Home Studios may
+              republish and credit my work to its network, but that the organization
+              does not claim ownership or copyright of my work.
             </span>
           </label>
 
           {error ? <p className="text-sm text-red-400">{error}</p> : null}
+
+          <p className="text-xs text-neutral-500">
+            By continuing you agree to our{" "}
+            <a
+              href="/privacy"
+              className="text-blue-300 underline decoration-dotted underline-offset-2 hover:text-blue-200"
+            >
+              Privacy Policy
+            </a>{" "}
+            and{" "}
+            <a
+              href="/terms"
+              className="text-blue-300 underline decoration-dotted underline-offset-2 hover:text-blue-200"
+            >
+              Terms of Service
+            </a>
+            .
+          </p>
 
           <div className="flex justify-end gap-4 text-sm">
             <button
@@ -941,14 +1226,16 @@ function VideoCard({
   video,
   isActive,
   onSelect,
+  onShare,
 }: {
   video: Video;
   isActive: boolean;
   onSelect: () => void;
+  onShare: () => void;
 }) {
   return (
     <article
-      className={`flex cursor-pointer flex-col rounded-3xl border ${
+      className={`relative flex cursor-pointer flex-col rounded-3xl border ${
         isActive ? "border-blue-500" : "border-white/10"
       } bg-white/[0.04] p-5 transition hover:border-blue-500`}
       onClick={onSelect}
@@ -962,19 +1249,58 @@ function VideoCard({
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
           />
+        ) : video.source === "tiktok" ? (
+          <iframe
+            src={video.url}
+            title={video.title ?? "TikTok video"}
+            className="h-full w-full"
+            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
         ) : (
-          <video controls playsInline className="h-full w-full" src={video.url} />
+          <video
+            controls
+            playsInline
+            preload="metadata"
+            className="h-full w-full"
+            src={video.url}
+            controlsList="nodownload nofullscreen noremoteplayback"
+            disablePictureInPicture
+            onContextMenu={(event) => event.preventDefault()}
+            draggable={false}
+          />
         )}
       </div>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onShare();
+        }}
+        className="absolute bottom-4 right-4 flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:border-white hover:bg-white/20"
+        aria-label="Copy share link"
+      >
+        <ShareIcon />
+      </button>
       <div className="mt-4">
         {video.isTopRated ? (
           <span className="text-[10px] uppercase tracking-[0.4em] text-blue-400">
             Top Rated
           </span>
         ) : null}
-        <span className="mt-3 inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300">
-          {video.category}
-        </span>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {video.categories.map((category) => (
+            <span
+              key={`${video.id}-${category}`}
+              className="inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300"
+            >
+              {category}
+            </span>
+          ))}
+        </div>
+        {video.fullName ? (
+          <p className="mt-2 text-xs text-neutral-400">{video.fullName}</p>
+        ) : null}
         <p
           className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500"
         >
@@ -1013,6 +1339,24 @@ function PromptDialog({
         {errorMessage ? (
           <p className="mt-4 text-xs font-semibold text-red-400">{errorMessage}</p>
         ) : null}
+        <p className="mt-4 text-xs text-neutral-500">
+          By continuing you agree to our{" "}
+          <a
+            href="/privacy"
+            className="text-blue-300 underline decoration-dotted underline-offset-2 hover:text-blue-200"
+          >
+            Privacy Policy
+          </a>{" "}
+          and{" "}
+          <a
+            href="/terms"
+            className="text-blue-300 underline decoration-dotted underline-offset-2 hover:text-blue-200"
+          >
+            Terms of Service
+          </a>
+          . We store post information, may advertise, and process payments in service of
+          creators while never claiming ownership of your work.
+        </p>
         <div className="mt-8 flex flex-wrap justify-center gap-4 text-sm">
           <button
             type="button"
@@ -1061,6 +1405,34 @@ function ProfileIcon() {
   );
 }
 
+function ShareIcon({ small = false }: { small?: boolean }) {
+  const sizeClass = small ? "size-3" : "size-4";
+
+  return (
+    <svg
+      className={sizeClass}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M15.5 5.5L20.5 10.5L15.5 15.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M20.5 10.5H10.5C7.73858 10.5 5.5 12.7386 5.5 15.5V18.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function GoogleIcon({ small = false }: { small?: boolean }) {
   const sizeClass = small ? "size-5" : "size-6";
 
@@ -1094,8 +1466,9 @@ function GoogleIcon({ small = false }: { small?: boolean }) {
 function normaliseLink(input: string): { url: string; source: VideoSource } {
   try {
     const url = new URL(input);
+    const host = url.hostname.toLowerCase();
 
-    if (url.hostname.includes("youtube.com") || url.hostname === "youtu.be") {
+    if (host.includes("youtube.com") || host === "youtu.be") {
       const id =
         url.searchParams.get("v") ||
         url.pathname
@@ -1111,11 +1484,27 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
       }
     }
 
-    if (url.hostname.includes("instagram.com")) {
+    if (host.includes("instagram.com")) {
       return {
         url: `${url.origin}${url.pathname.replace(/\/$/, "")}/embed`,
         source: "instagram",
       };
+    }
+
+    if (host.includes("tiktok.com")) {
+      const segments = url.pathname.split("/").filter(Boolean);
+      const videoIndex = segments.findIndex((segment) => segment === "video");
+      const videoId =
+        videoIndex >= 0 && segments[videoIndex + 1]
+          ? segments[videoIndex + 1]
+          : null;
+
+      if (videoId) {
+        return {
+          url: `https://www.tiktok.com/embed/${videoId}`,
+          source: "tiktok",
+        };
+      }
     }
 
     return { url: input, source: "external" };
