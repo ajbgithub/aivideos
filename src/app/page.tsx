@@ -290,7 +290,7 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-4">
-          {isAuthenticated ? (
+          {isAuthenticated && user ? (
             <div className="flex items-center gap-4">
               <div className="flex size-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-lg font-medium uppercase">
                 {user.name.charAt(0)}
