@@ -15,6 +15,7 @@ export type StoredVideo = {
   isTopRated: boolean;
   categories: string[];
   fullName?: string;
+  storageObjectPath?: string | null;
 };
 
 export const CATEGORY_OPTIONS = [

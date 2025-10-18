@@ -145,3 +145,56 @@ create policy "Creators delete their ai_videos uploads"
     bucket_id = 'ai_videos'
     and auth.uid() = owner
   );
+
+-- Subscription waitlist table
+create table if not exists public.subscription_waitlist (
+  id uuid primary key default gen_random_uuid(),
+  user_email text not null unique,
+  user_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.set_subscription_waitlist_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists set_subscription_waitlist_updated_at on public.subscription_waitlist;
+
+create trigger set_subscription_waitlist_updated_at
+before update on public.subscription_waitlist
+for each row
+execute function public.set_subscription_waitlist_updated_at();
+
+alter table public.subscription_waitlist enable row level security;
+
+drop policy if exists "Users view their waitlist entry" on public.subscription_waitlist;
+create policy "Users view their waitlist entry"
+  on public.subscription_waitlist
+  for select
+  using (auth.email() = user_email);
+
+drop policy if exists "Users join the waitlist" on public.subscription_waitlist;
+create policy "Users join the waitlist"
+  on public.subscription_waitlist
+  for insert
+  with check (
+    auth.email() = user_email
+    and (user_id is null or auth.uid() = user_id)
+  );
+
+drop policy if exists "Users update their waitlist entry" on public.subscription_waitlist;
+create policy "Users update their waitlist entry"
+  on public.subscription_waitlist
+  for update
+  using (auth.email() = user_email)
+  with check (
+    auth.email() = user_email
+    and (user_id is null or auth.uid() = user_id)
+  );

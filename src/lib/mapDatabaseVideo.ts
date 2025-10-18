@@ -48,6 +48,7 @@ export function mapDatabaseVideo(
           .slice(0, 3)
       : [],
     fullName: row.full_name ?? undefined,
+    storageObjectPath: row.storage_object_path ?? null,
   };
 }
 
