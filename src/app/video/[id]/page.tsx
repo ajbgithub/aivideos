@@ -31,6 +31,7 @@ export default function VideoDetailPage() {
   const [status, setStatus] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [moreByCreator, setMoreByCreator] = useState<StoredVideo[]>([]);
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -105,7 +106,7 @@ export default function VideoDetailPage() {
     const shareUrl = `${window.location.origin}/video/${encodeURIComponent(
       video.id
     )}`;
-    const clipboardText = `Check out "${video.title ?? "this AI video"}" on aihomestudios: ${shareUrl}`;
+    const clipboardText = `Check out "${video.title ?? "this AI video"}" on Eagle AI Pictures: ${shareUrl}`;
 
     try {
       if (navigator.clipboard?.writeText) {
@@ -126,6 +127,94 @@ export default function VideoDetailPage() {
     }
   }, [video]);
 
+  useEffect(() => {
+    if (!video) {
+      setMoreByCreator([]);
+      return;
+    }
+
+    const related = new Map<string, StoredVideo>();
+
+    const addVideo = (item: StoredVideo) => {
+      if (item.id === video.id || related.has(item.id)) {
+        return;
+      }
+
+      related.set(item.id, item);
+    };
+
+    const targetEmail = video.uploader.email?.trim();
+    const targetName = (video.fullName ?? toTitleCase(video.uploader.name)).trim();
+
+    INITIAL_VIDEOS.forEach((item) => {
+      const itemEmail = item.uploader.email?.trim();
+      const itemName = (item.fullName ?? toTitleCase(item.uploader.name)).trim();
+
+      if (targetEmail && itemEmail) {
+        if (itemEmail === targetEmail) {
+          addVideo(item);
+        }
+        return;
+      }
+
+      if (!targetEmail && !itemEmail && itemName && itemName === targetName) {
+        addVideo(item);
+      }
+    });
+
+    let isMounted = true;
+
+    const loadRelated = async () => {
+      try {
+        if (targetEmail) {
+          const { data, error } = await supabase
+            .from("videos")
+            .select(
+              "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+            )
+            .eq("uploader_email", targetEmail)
+            .neq("id", video.id)
+            .order("created_at", { ascending: false })
+            .limit(12);
+
+          if (!error && data) {
+            data
+              .map(mapDatabaseVideo)
+              .filter((item): item is StoredVideo => Boolean(item))
+              .forEach(addVideo);
+          }
+        } else if (targetName) {
+          const { data, error } = await supabase
+            .from("videos")
+            .select(
+              "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+            )
+            .eq("full_name", targetName)
+            .neq("id", video.id)
+            .order("created_at", { ascending: false })
+            .limit(12);
+
+          if (!error && data) {
+            data
+              .map(mapDatabaseVideo)
+              .filter((item): item is StoredVideo => Boolean(item))
+              .forEach(addVideo);
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setMoreByCreator(Array.from(related.values()).slice(0, 6));
+        }
+      }
+    };
+
+    loadRelated();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [video]);
+
   if (status === "loading") {
     return (
       <PageShell>
@@ -140,9 +229,7 @@ export default function VideoDetailPage() {
         <StatusMessage>
           Unable to load this video. {errorMessage ?? "Please try again later."}
         </StatusMessage>
-        <BackLink onNavigate={() => router.push("/")}>
-          Return to gallery
-        </BackLink>
+        <BackLink onNavigate={() => router.push("/")} />
       </PageShell>
     );
   }
@@ -153,9 +240,7 @@ export default function VideoDetailPage() {
         <StatusMessage>
           We couldn&apos;t find that video. It may have been removed.
         </StatusMessage>
-        <BackLink onNavigate={() => router.push("/")}>
-          Return to gallery
-        </BackLink>
+        <BackLink onNavigate={() => router.push("/")} />
       </PageShell>
     );
   }
@@ -174,18 +259,19 @@ export default function VideoDetailPage() {
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="inline-flex items-center text-xs uppercase tracking-[0.6em] text-neutral-500 transition hover:text-white"
+            className="inline-flex items-center justify-center rounded-full border border-white/20 p-3 text-white transition hover:border-white hover:bg-white/10"
+            aria-label="Back to gallery"
           >
-            Back to Gallery
+            ←
           </button>
           <h1 className="mt-4 text-3xl font-semibold tracking-wide text-white sm:text-4xl">
             {video.title ?? "Untitled Upload"}
           </h1>
-          <p className="mt-2 text-sm text-neutral-400">
+          <p className="mt-2 text-sm text-white">
             Shared by {video.fullName ?? toTitleCase(video.uploader.name)}
           </p>
           {video.uploader.email ? (
-            <p className="text-xs text-neutral-500">{video.uploader.email}</p>
+            <p className="text-xs text-white">{video.uploader.email}</p>
           ) : null}
         </div>
         <button
@@ -203,7 +289,7 @@ export default function VideoDetailPage() {
         </div>
         <aside className="space-y-6 rounded-3xl border border-white/10 bg-white/[0.05] p-8 backdrop-blur">
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-neutral-500">
+            <p className="text-xs uppercase tracking-[0.4em] text-white">
               Categories
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -211,38 +297,54 @@ export default function VideoDetailPage() {
                 video.categories.map((category) => (
                   <span
                     key={`${video.id}-${category}`}
-                    className="inline-flex items-center rounded-full border border-white/10 px-4 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300"
+                    className="inline-flex items-center rounded-full border border-white/10 px-4 py-1 text-[10px] uppercase tracking-[0.4em] text-white"
                   >
                     {category}
                   </span>
                 ))
               ) : (
-                <span className="text-xs text-neutral-500">
+                <span className="text-xs text-white">
                   No categories provided.
                 </span>
               )}
             </div>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-neutral-500">
+            <p className="text-xs uppercase tracking-[0.4em] text-white">
               Posted
             </p>
-            <p className="mt-3 text-sm text-neutral-300">
+            <p className="mt-3 text-sm text-white">
               {new Date(video.createdAt).toLocaleString()}
             </p>
           </div>
           {video.description ? (
             <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-neutral-500">
+              <p className="text-xs uppercase tracking-[0.4em] text-white">
                 Description
               </p>
-              <p className="mt-3 text-sm leading-relaxed text-neutral-300">
+              <p className="mt-3 text-sm leading-relaxed text-white">
                 {video.description}
               </p>
             </div>
           ) : null}
         </aside>
       </main>
+      {moreByCreator.length > 0 ? (
+        <section className="mt-16">
+          <h2 className="text-lg font-semibold text-white">
+            More by this creator
+          </h2>
+          <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {moreByCreator.map((item) => (
+              <RelatedVideoCard
+                key={item.id}
+                video={item}
+                onOpen={() => router.push(`/video/${item.id}`)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </PageShell>
   );
 }
@@ -257,27 +359,64 @@ function PageShell({ children }: { children: ReactNode }) {
 
 function StatusMessage({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-12 text-center text-sm text-neutral-300">
+    <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-12 text-center text-sm text-white">
       {children}
     </div>
   );
 }
 
-function BackLink({
-  onNavigate,
-  children,
-}: {
-  onNavigate: () => void;
-  children: ReactNode;
-}) {
+function BackLink({ onNavigate }: { onNavigate: () => void }) {
   return (
     <button
       type="button"
       onClick={onNavigate}
-      className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
+      className="mt-6 inline-flex items-center justify-center rounded-full border border-white/20 p-3 text-white transition hover:border-white hover:bg-white/10"
+      aria-label="Back to gallery"
     >
-      {children}
+      ←
     </button>
+  );
+}
+
+function RelatedVideoCard({
+  video,
+  onOpen,
+}: {
+  video: StoredVideo;
+  onOpen: () => void;
+}) {
+  const displayTitle = video.title ?? "Untitled Upload";
+  const displayName = video.fullName ?? toTitleCase(video.uploader.name);
+
+  return (
+    <article
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] transition hover:border-blue-500"
+      onClick={onOpen}
+    >
+      <div className="flex aspect-video items-center justify-center bg-black/80 text-white">
+        <span className="text-xs uppercase tracking-[0.4em]">View</span>
+      </div>
+      <div className="p-5">
+        <h3 className="text-base font-semibold text-white group-hover:text-blue-200">
+          {displayTitle}
+        </h3>
+        <p className="mt-2 text-xs uppercase tracking-[0.3em] text-white">
+          {displayName}
+        </p>
+        {video.categories.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {video.categories.slice(0, 3).map((category) => (
+              <span
+                key={`${video.id}-more-${category}`}
+                className="rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white"
+              >
+                {category}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </article>
   );
 }
 

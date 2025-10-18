@@ -19,7 +19,7 @@ create table if not exists public.videos (
   uploader_email text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint video_media_present check (num_nonnulls(video_url, storage_object_path) = 1),
+  constraint video_media_present check (num_nonnulls(video_url, storage_object_path) >= 1),
   constraint video_categories_limit check (cardinality(categories) <= 3)
 );
 
@@ -50,7 +50,7 @@ alter table public.videos
   drop constraint if exists video_media_present;
 
 alter table public.videos
-  add constraint video_media_present check (num_nonnulls(video_url, storage_object_path) = 1);
+  add constraint video_media_present check (num_nonnulls(video_url, storage_object_path) >= 1);
 
 alter table public.videos
   drop constraint if exists video_categories_limit;

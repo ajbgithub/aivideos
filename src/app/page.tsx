@@ -10,6 +10,7 @@ import { ShareIcon } from "@/components/icons/ShareIcon";
 import { supabase } from "@/lib/supabaseClient";
 import { mapDatabaseVideo } from "@/lib/mapDatabaseVideo";
 import type { User as SupabaseAuthUser } from "@supabase/supabase-js";
+import Image from "next/image";
 import {
   ChangeEvent,
   FormEvent,
@@ -37,9 +38,49 @@ type UploadPayload = {
   fullName: string;
 };
 
+type FeedbackEntry = {
+  id: string;
+  text: string;
+  createdAt: string;
+};
+
+type ProfileData = {
+  fullName: string;
+  interests: string;
+  desiredMedia: string;
+  collaborationInterest: "Y" | "N" | "";
+  feedback: FeedbackEntry[];
+};
+type ProfileDetailsInput = Omit<ProfileData, "feedback">;
+
 const CATEGORIES = ["All", ...CATEGORY_OPTIONS];
 const DEFAULT_UPLOAD_CATEGORIES: string[] = [CATEGORY_OPTIONS[0]];
-const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB
+const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 500; // 500 MB
+const PROFILE_STORAGE_PREFIX = "eagle-profile-";
+const DEFAULT_PROFILE_DATA: ProfileData = {
+  fullName: "",
+  interests: "",
+  desiredMedia: "",
+  collaborationInterest: "",
+  feedback: [],
+};
+const ROTATING_LABELS = [
+  "AI Videos",
+  "AI Films",
+  "AI Podcasts",
+  "AI TV",
+  "AI Music Videos",
+];
+
+function createFeedbackEntry(text: string): FeedbackEntry {
+  return {
+    id: `feedback-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2)}`,
+    text,
+    createdAt: new Date().toISOString(),
+  };
+}
 
 const initialVideos: Video[] = INITIAL_VIDEOS.map((video) => ({ ...video }));
 
@@ -60,13 +101,77 @@ export default function Home() {
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [showProfilePanel, setShowProfilePanel] = useState(false);
+  const [profileData, setProfileData] =
+    useState<ProfileData>(DEFAULT_PROFILE_DATA);
+  const [rotatingIndex, setRotatingIndex] = useState(0);
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const profileStorageKey = useMemo(
+    () => (user?.email ? `${PROFILE_STORAGE_PREFIX}${user.email}` : null),
+    [user?.email]
+  );
+  const effectiveProfileName = useMemo(() => {
+    const trimmedProfileName = profileData.fullName.trim();
+
+    if (trimmedProfileName) {
+      return trimmedProfileName;
+    }
+
+    const fallbackName = user?.name?.trim();
+
+    if (fallbackName) {
+      return fallbackName;
+    }
+
+    return "Creator";
+  }, [profileData.fullName, user?.name]);
+  const profileInitial = useMemo(
+    () => (effectiveProfileName ? effectiveProfileName.charAt(0).toUpperCase() : "C"),
+    [effectiveProfileName]
+  );
+  const rotatingLabel = useMemo(() => {
+    if (ROTATING_LABELS.length === 0) {
+      return "";
+    }
+
+    const index = rotatingIndex % ROTATING_LABELS.length;
+    return ROTATING_LABELS[index];
+  }, [rotatingIndex]);
+  const myUploads = useMemo(() => {
+    if (!user?.email) {
+      return [];
+    }
+
+    return uploadedVideos.filter(
+      (video) => video.uploader.email === user.email
+    );
+  }, [uploadedVideos, user?.email]);
 
   useEffect(() => {
     return () => {
       if (shareTimeoutRef.current) {
         clearTimeout(shareTimeoutRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (ROTATING_LABELS.length <= 1) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRotatingIndex((previous) => (previous + 1) % ROTATING_LABELS.length);
+    }, 3500);
+
+    return () => {
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -99,6 +204,105 @@ export default function Home() {
       window.history.replaceState({}, "", currentUrl.toString());
     }
   }, []);
+
+  useEffect(() => {
+    if (!user || !profileStorageKey) {
+      setProfileData(DEFAULT_PROFILE_DATA);
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const storedValue = window.localStorage.getItem(profileStorageKey);
+
+      if (storedValue) {
+        const parsed = JSON.parse(storedValue) as Partial<ProfileData>;
+        setProfileData({
+          ...DEFAULT_PROFILE_DATA,
+          ...parsed,
+          fullName:
+            (parsed.fullName as string | undefined)?.trim() ||
+            user.name ||
+            "",
+          interests:
+            (parsed.interests as string | undefined) ?? DEFAULT_PROFILE_DATA.interests,
+          desiredMedia:
+            (parsed.desiredMedia as string | undefined) ??
+            DEFAULT_PROFILE_DATA.desiredMedia,
+          collaborationInterest:
+            (parsed.collaborationInterest as ProfileData["collaborationInterest"]) ??
+            DEFAULT_PROFILE_DATA.collaborationInterest,
+          feedback: Array.isArray(parsed.feedback)
+            ? (parsed.feedback as FeedbackEntry[]).slice(0, 5)
+            : DEFAULT_PROFILE_DATA.feedback,
+        });
+        return;
+      }
+    } catch {
+      // Ignore malformed data and fall back to defaults.
+    }
+
+    setProfileData({
+      ...DEFAULT_PROFILE_DATA,
+      fullName: user.name,
+    });
+  }, [profileStorageKey, user]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !profileStorageKey || !user) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      profileStorageKey,
+      JSON.stringify(profileData)
+    );
+  }, [profileData, profileStorageKey, user]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!profileMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!profileMenuRef.current) {
+        return;
+      }
+
+      if (!profileMenuRef.current.contains(event.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [profileMenuOpen]);
+
+  useEffect(() => {
+    if (!user) {
+      setProfileMenuOpen(false);
+      setShowProfilePanel(false);
+      setProfileData(DEFAULT_PROFILE_DATA);
+    }
+  }, [user]);
 
   useEffect(() => {
     let isMounted = true;
@@ -266,6 +470,9 @@ export default function Home() {
 
     setUser(null);
     setShowUploadForm(false);
+    setProfileMenuOpen(false);
+    setShowProfilePanel(false);
+    setProfileData(DEFAULT_PROFILE_DATA);
   }, []);
 
   const handleUploadClick = useCallback(() => {
@@ -281,6 +488,7 @@ export default function Home() {
 
   const handleProfileClick = useCallback(() => {
     if (isAuthenticated && user) {
+      setProfileMenuOpen((previous) => !previous);
       return;
     }
 
@@ -319,7 +527,7 @@ export default function Home() {
 
       const baseUrl = window.location.origin;
       const shareUrl = `${baseUrl}/video/${encodeURIComponent(video.id)}`;
-      const clipboardText = `Hey, check out this video on aihomestudios! ${shareUrl}`;
+      const clipboardText = `Hey, check out this video on Eagle AI Pictures! ${shareUrl}`;
 
       try {
         if (navigator.clipboard?.writeText) {
@@ -334,6 +542,56 @@ export default function Home() {
     },
     [showShareNotice]
   );
+
+  const handleSaveProfileDetails = useCallback(
+    (details: ProfileDetailsInput) => {
+      setProfileData((previous) => ({
+        ...previous,
+        fullName: details.fullName.trim(),
+        interests: details.interests,
+        desiredMedia: details.desiredMedia,
+        collaborationInterest:
+          details.collaborationInterest === "Y" ||
+          details.collaborationInterest === "N"
+            ? details.collaborationInterest
+            : "",
+      }));
+    },
+    []
+  );
+
+  const handleFullNameChange = useCallback((nextName: string) => {
+    setProfileData((previous) => ({
+      ...previous,
+      fullName: nextName,
+    }));
+  }, []);
+
+  const handleAddFeedback = useCallback((feedbackText: string) => {
+    const trimmed = feedbackText.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    setProfileData((previous) => {
+      if (previous.feedback.length >= 5) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        feedback: [createFeedbackEntry(trimmed), ...previous.feedback],
+      };
+    });
+  }, []);
+
+  const handleRemoveFeedback = useCallback((feedbackId: string) => {
+    setProfileData((previous) => ({
+      ...previous,
+      feedback: previous.feedback.filter((entry) => entry.id !== feedbackId),
+    }));
+  }, []);
 
   const handleUploadSubmit = useCallback(
     async (
@@ -461,6 +719,91 @@ export default function Home() {
     [user]
   );
 
+  const handleUpdateVideoDetails = useCallback(
+    async (
+      videoId: string,
+      updates: { title: string; description: string; categories: string[] }
+    ): Promise<{ success: boolean; error?: string }> => {
+      try {
+        const trimmedTitle = updates.title.trim();
+        const trimmedDescription = updates.description.trim();
+        const sanitizedCategories = updates.categories
+          .filter(Boolean)
+          .slice(0, 3);
+
+        const { data, error } = await supabase
+          .from("videos")
+          .update({
+            title: trimmedTitle || null,
+            description: trimmedDescription || null,
+            categories: sanitizedCategories,
+            full_name: effectiveProfileName,
+            uploader_name: effectiveProfileName,
+          })
+          .eq("id", videoId)
+          .select(
+            "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+          )
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+
+        const mapped = data ? mapDatabaseVideo(data) : null;
+
+        if (!mapped) {
+          throw new Error("Unable to refresh the updated video. Please reload.");
+        }
+
+        setUploadedVideos((previous) =>
+          previous.map((video) => (video.id === videoId ? mapped : video))
+        );
+        setSeedVideos((previous) =>
+          previous.map((video) => (video.id === videoId ? mapped : video))
+        );
+
+        return { success: true };
+      } catch (unknownError) {
+        return {
+          success: false,
+          error:
+            unknownError instanceof Error
+              ? unknownError.message
+              : "Unable to update this video right now.",
+        };
+      }
+    },
+    [effectiveProfileName]
+  );
+
+  const handleDeleteVideo = useCallback(
+    async (videoId: string): Promise<{ success: boolean; error?: string }> => {
+      try {
+        const { error } = await supabase.from("videos").delete().eq("id", videoId);
+
+        if (error) {
+          throw error;
+        }
+
+        setUploadedVideos((previous) =>
+          previous.filter((video) => video.id !== videoId)
+        );
+
+        return { success: true };
+      } catch (unknownError) {
+        return {
+          success: false,
+          error:
+            unknownError instanceof Error
+              ? unknownError.message
+              : "Unable to delete this video right now.",
+        };
+      }
+    },
+    []
+  );
+
   const allVideos = useMemo(
     () => [...uploadedVideos, ...seedVideos],
     [uploadedVideos, seedVideos]
@@ -476,10 +819,17 @@ export default function Home() {
 
     return regularVideos.filter((video) => video.categories.includes(selectedCategory));
   }, [regularVideos, selectedCategory]);
-  const topRatedVideos = useMemo(
-    () => allVideos.filter((video) => video.isTopRated),
-    [allVideos]
-  );
+  const topRatedVideos = useMemo(() => {
+    const featured = allVideos.filter((video) => video.isTopRated);
+
+    if (selectedCategory === "All") {
+      return featured;
+    }
+
+    return featured.filter((video) =>
+      video.categories.includes(selectedCategory)
+    );
+  }, [allVideos, selectedCategory]);
   const promptCopy = useMemo(() => {
     if (authPromptContext === "profile") {
       return {
@@ -548,47 +898,87 @@ export default function Home() {
           </div>
         </div>
       ) : null}
-      <header className="flex items-start justify-between px-10 py-10">
-        <div>
+      <header className="flex flex-col gap-8 px-10 py-10 sm:flex-row sm:items-start sm:justify-between">
+        <div className="max-w-xl">
           <button
             type="button"
             onClick={() => setShowAboutDialog(true)}
-            className="mt-2 inline-flex items-center text-xs uppercase tracking-[0.6em] text-neutral-500 transition hover:text-white"
+            className="mt-2 inline-flex items-center text-xs uppercase tracking-[0.6em] text-white transition hover:text-blue-200"
           >
-            AI Home Studios
+            Eagle AI Pictures
           </button>
-          <h1 className="mt-3 whitespace-nowrap text-4xl font-semibold tracking-wide text-white sm:text-5xl">
-            AI Videos
+          <h1
+            className="mt-3 whitespace-nowrap text-4xl font-semibold tracking-wide text-white sm:text-5xl"
+            aria-live="polite"
+          >
+            {rotatingLabel}
           </h1>
-          <p className="mt-3 text-sm text-neutral-400">
-            Highlighting the work of AI creators in one place
+          <p className="mt-3 text-sm text-white">
+            Highlighting the work of AI creators in one place.
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
-          {isAuthenticated && user ? (
-            <div className="flex items-center gap-4">
-              <div className="flex size-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-lg font-medium uppercase">
-                {user.name.charAt(0)}
-              </div>
+        <div className="flex flex-col items-center gap-3 sm:items-end">
+          <div
+            className="relative"
+            ref={isAuthenticated ? profileMenuRef : undefined}
+          >
+            {isAuthenticated && user ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleProfileClick}
+                  className="flex size-12 items-center justify-center rounded-full border border-white/20 bg-white/[0.08] text-lg font-semibold uppercase text-white transition hover:border-white"
+                  aria-haspopup="true"
+                  aria-expanded={profileMenuOpen}
+                  aria-label="Open profile options"
+                >
+                  {profileInitial}
+                </button>
+                {profileMenuOpen ? (
+                  <div className="absolute right-0 top-14 w-48 rounded-2xl border border-white/10 bg-black/90 p-2 shadow-xl backdrop-blur">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        setShowProfilePanel(true);
+                      }}
+                      className="flex w-full items-center rounded-xl px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+                    >
+                      View Profile
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        void handleGoogleSignOut();
+                      }}
+                      className="mt-1 flex w-full items-center rounded-xl px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
               <button
                 type="button"
-                onClick={handleGoogleSignOut}
-                className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium tracking-wide transition hover:bg-white hover:text-black"
+                onClick={handleProfileClick}
+                className="flex size-12 items-center justify-center rounded-full border border-white/20 transition hover:border-white"
+                aria-label="Open profile menu"
               >
-                Sign out
+                <ProfileIcon />
               </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleProfileClick}
-              className="flex size-12 items-center justify-center rounded-full border border-white/20 transition hover:border-white"
-              aria-label="Open profile menu"
-            >
-              <ProfileIcon />
-            </button>
-          )}
+            )}
+          </div>
+          <Image
+            src="/favicon.ico"
+            alt="Eagle AI Pictures emblem"
+            width={42}
+            height={42}
+            className="rounded-lg shadow-lg"
+            priority
+          />
         </div>
       </header>
 
@@ -601,7 +991,7 @@ export default function Home() {
           >
             Upload Your AI Videos
           </button>
-          <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-[11px] tracking-[0.3em] text-neutral-400">
+          <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-[11px] tracking-[0.3em] text-white">
             Categories
             <select
               value={selectedCategory}
@@ -621,15 +1011,15 @@ export default function Home() {
         <section className="mb-12">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-xs uppercase tracking-[0.6em] text-neutral-500">
+              <h2 className="text-xs uppercase tracking-[0.6em] text-white">
                 Top Rated
               </h2>
-              <p className="text-sm text-neutral-400">
+              <p className="text-sm text-white">
                 Curated features highlighted for the community.
               </p>
             </div>
             {isAdmin ? (
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-white">
                 Select a video to feature or remove it from Top Rated.
               </p>
             ) : null}
@@ -647,19 +1037,19 @@ export default function Home() {
                 />
               ))}
             </div>
-          ) : (
-            <p className="mt-6 text-sm text-neutral-500">
+          ) : selectedCategory === "All" ? (
+            <p className="mt-6 text-sm text-white">
               No videos have been featured yet. Admins can promote favorites from
               the video details panel.
             </p>
-          )}
+          ) : null}
         </section>
         <section className="mb-6">
-          <h2 className="text-xs uppercase tracking-[0.6em] text-neutral-500">
+          <h2 className="text-xs uppercase tracking-[0.6em] text-white">
             Community
           </h2>
-          <p className="mt-2 text-sm text-neutral-400">
-            Fresh uploads and discoveries from across AI Home Studios.
+          <p className="mt-2 text-sm text-white">
+            Fresh uploads and discoveries from across Eagle AI Pictures.
           </p>
         </section>
         <section className="space-y-6">
@@ -669,7 +1059,7 @@ export default function Home() {
             </div>
           ) : null}
           {isLoadingPosts ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-neutral-300">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white">
               Loading community posts...
             </div>
           ) : null}
@@ -686,12 +1076,33 @@ export default function Home() {
             ))}
           </div>
           {!isLoadingPosts && videosToDisplay.length === 0 ? (
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-white">
               No community posts yet. Be the first to upload your AI-powered creation.
             </p>
           ) : null}
         </section>
       </main>
+
+      {showProfilePanel && user ? (
+        <ProfilePanel
+          user={user}
+          onClose={() => setShowProfilePanel(false)}
+          profileDetails={{
+            fullName: profileData.fullName,
+            interests: profileData.interests,
+            desiredMedia: profileData.desiredMedia,
+            collaborationInterest: profileData.collaborationInterest,
+          }}
+          feedback={profileData.feedback}
+          onSaveProfile={handleSaveProfileDetails}
+          onFullNameChange={handleFullNameChange}
+          onAddFeedback={handleAddFeedback}
+          onRemoveFeedback={handleRemoveFeedback}
+          videos={myUploads}
+          onUpdateVideo={handleUpdateVideoDetails}
+          onDeleteVideo={handleDeleteVideo}
+        />
+      ) : null}
 
       {showUploadForm && user ? (
         <UploadModal
@@ -699,6 +1110,8 @@ export default function Home() {
           onSubmit={handleUploadSubmit}
           user={user}
           categories={CATEGORY_OPTIONS}
+          profileFullName={effectiveProfileName}
+          onFullNameChange={handleFullNameChange}
         />
       ) : null}
 
@@ -763,6 +1176,8 @@ function UploadModal({
   onSubmit,
   user,
   categories,
+  profileFullName,
+  onFullNameChange,
 }: {
   onClose: () => void;
   onSubmit: (
@@ -770,6 +1185,8 @@ function UploadModal({
   ) => Promise<{ success: boolean; error?: string }>;
   user: User;
   categories: readonly string[];
+  profileFullName: string;
+  onFullNameChange: (fullName: string) => void;
 }) {
   const defaultCategories =
     DEFAULT_UPLOAD_CATEGORIES.filter((category) =>
@@ -785,7 +1202,7 @@ function UploadModal({
     videoLink: "",
     videoFile: null,
     categories: [...initialCategorySelection],
-    fullName: user.name,
+    fullName: profileFullName || user.name,
   });
   const [error, setError] = useState<string | null>(null);
   const [hasAgreed, setHasAgreed] = useState(false);
@@ -794,6 +1211,13 @@ function UploadModal({
   const hasVideoFile = Boolean(formState.videoFile);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const linkInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setFormState((previous) => ({
+      ...previous,
+      fullName: profileFullName || user.name,
+    }));
+  }, [profileFullName, user.name]);
 
   const handleToggleCategory = (category: string) => {
     setFormState((prev) => {
@@ -834,7 +1258,7 @@ function UploadModal({
     const nextFile = event.target.files?.[0] ?? null;
 
     if (nextFile && nextFile.size > MAX_FILE_SIZE_BYTES) {
-      setError("Video file must be 1 GB or smaller.");
+      setError("Video file must be 500 MB or smaller.");
       event.target.value = "";
       return;
     }
@@ -877,7 +1301,7 @@ function UploadModal({
     }
 
     if (formState.videoFile && formState.videoFile.size > MAX_FILE_SIZE_BYTES) {
-      setError("Video file must be 1 GB or smaller.");
+      setError("Video file must be 500 MB or smaller.");
       return;
     }
 
@@ -908,7 +1332,7 @@ function UploadModal({
         videoLink: "",
         videoFile: null,
         categories: [...initialCategorySelection],
-        fullName: user.name,
+        fullName: profileFullName || user.name,
       });
       setHasAgreed(false);
     } catch {
@@ -932,14 +1356,14 @@ function UploadModal({
             <h2 className="text-2xl font-semibold tracking-wide">
               Upload Your AI Video
             </h2>
-            <p className="mt-2 text-sm text-neutral-400">
+            <p className="mt-2 text-sm text-white">
               Signed in as {user.email}. This address will be displayed with your video.
             </p>
           </div>
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-full border border-white/10 p-2 text-sm text-neutral-400 transition hover:border-white hover:text-white"
+            className="rounded-full border border-white/10 p-2 text-sm text-white transition hover:border-white hover:text-white"
             aria-label="Close upload form"
           >
             ✕
@@ -951,12 +1375,14 @@ function UploadModal({
             Your full name
             <input
               value={formState.fullName}
-              onChange={(event) =>
+              onChange={(event) => {
+                const nextValue = event.target.value;
                 setFormState((prev) => ({
                   ...prev,
-                  fullName: event.target.value,
-                }))
-              }
+                  fullName: nextValue,
+                }));
+                onFullNameChange(nextValue);
+              }}
               placeholder="Jordan Smith"
               className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
               maxLength={100}
@@ -1009,8 +1435,8 @@ function UploadModal({
                     onClick={() => handleToggleCategory(category)}
                     className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${
                       isSelected
-                        ? "border-blue-500 bg-blue-500/20 text-blue-200"
-                        : "border-white/10 bg-white/[0.04] text-neutral-200 hover:border-white/30"
+                        ? "border-blue-500 bg-blue-500/20 text-white"
+                        : "border-white/10 bg-white/[0.04] text-white hover:border-white/30"
                     }`}
                   >
                     {category}
@@ -1030,30 +1456,30 @@ function UploadModal({
               disabled={hasVideoFile}
               ref={linkInputRef}
             />
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-white">
               Paste a link to feature your hosted video. Adding a link disables file uploads.
             </span>
           </label>
 
           <div className="flex items-center gap-4">
-            <span className="text-sm text-neutral-500">or</span>
+            <span className="text-sm text-white">or</span>
             <label className="flex w-full flex-col gap-3 text-sm">
-              Upload a video file (max 1 GB)
+              Upload a video file (max 500 MB)
               <input
                 type="file"
                 accept="video/*"
                 onChange={handleFileInputChange}
-                className="cursor-pointer rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-4 py-10 text-center text-neutral-400 transition hover:border-white"
+                className="cursor-pointer rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-4 py-10 text-center text-white transition hover:border-white"
                 disabled={hasVideoLink}
                 ref={fileInputRef}
               />
-              <span className="text-xs text-neutral-500">
+              <span className="text-xs text-white">
                 Uploads are disabled when a video link is provided.
               </span>
             </label>
           </div>
 
-          <label className="flex items-start gap-3 text-xs text-neutral-400">
+          <label className="flex items-start gap-3 text-xs text-white">
             <input
               type="checkbox"
               checked={hasAgreed}
@@ -1062,7 +1488,7 @@ function UploadModal({
             />
             <span>
               By uploading to this site, I acknowledge this work as my own, and credit
-              other artists where appropriate. I acknowledge AI Home Studios may
+              other artists where appropriate. I acknowledge Eagle AI Pictures may
               republish and reference my work with its network, but that the organization
               does not claim ownership or copyright of my work.
             </span>
@@ -1070,7 +1496,7 @@ function UploadModal({
 
           {error ? <p className="text-sm text-red-400">{error}</p> : null}
 
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-white">
             By continuing you agree to our{" "}
             <a
               href="/privacy"
@@ -1107,6 +1533,530 @@ function UploadModal({
         </form>
       </div>
     </div>
+  );
+}
+
+type ProfilePanelProps = {
+  user: User;
+  onClose: () => void;
+  profileDetails: ProfileDetailsInput;
+  feedback: FeedbackEntry[];
+  onSaveProfile: (details: ProfileDetailsInput) => void;
+  onFullNameChange: (fullName: string) => void;
+  onAddFeedback: (text: string) => void;
+  onRemoveFeedback: (id: string) => void;
+  videos: Video[];
+  onUpdateVideo: (
+    id: string,
+    updates: { title: string; description: string; categories: string[] }
+  ) => Promise<{ success: boolean; error?: string }>;
+  onDeleteVideo: (id: string) => Promise<{ success: boolean; error?: string }>;
+};
+
+function ProfilePanel({
+  user,
+  onClose,
+  profileDetails,
+  feedback,
+  onSaveProfile,
+  onFullNameChange,
+  onAddFeedback,
+  onRemoveFeedback,
+  videos,
+  onUpdateVideo,
+  onDeleteVideo,
+}: ProfilePanelProps) {
+  const [draft, setDraft] = useState<ProfileDetailsInput>({ ...profileDetails });
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [feedbackDraft, setFeedbackDraft] = useState("");
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft({ ...profileDetails });
+  }, [profileDetails]);
+
+  const handleProfileSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedFullName = draft.fullName.trim();
+
+    if (!trimmedFullName) {
+      setErrorMessage("Add your full name before saving.");
+      setStatusMessage(null);
+      return;
+    }
+
+    const normalizedInterest =
+      draft.collaborationInterest === "Y" || draft.collaborationInterest === "N"
+        ? draft.collaborationInterest
+        : "";
+
+    onSaveProfile({
+      fullName: trimmedFullName,
+      interests: draft.interests,
+      desiredMedia: draft.desiredMedia,
+      collaborationInterest: normalizedInterest,
+    });
+    onFullNameChange(trimmedFullName);
+    setErrorMessage(null);
+    setStatusMessage("Profile saved.");
+  };
+
+  const handleFeedbackSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = feedbackDraft.trim();
+
+    if (!trimmed) {
+      setFeedbackError("Share your feedback before submitting.");
+      return;
+    }
+
+    if (feedback.length >= 5) {
+      setFeedbackError("You can record up to five feedback submissions.");
+      return;
+    }
+
+    onAddFeedback(trimmed);
+    setFeedbackDraft("");
+    setFeedbackError(null);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-white/10 bg-black px-8 py-10 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h2 className="text-2xl font-semibold text-white">Your Profile</h2>
+            <p className="mt-2 text-sm text-white">Signed in as {user.email}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-white/10 px-3 py-1 text-sm text-white transition hover:border-white hover:bg-white/10"
+            aria-label="Close profile window"
+          >
+            ✕
+          </button>
+        </div>
+
+        <section className="mt-8">
+          <form
+            className="grid grid-cols-1 gap-6 md:grid-cols-2"
+            onSubmit={handleProfileSubmit}
+          >
+            <label className="flex flex-col gap-2 text-sm text-white md:col-span-2">
+              Your full name
+              <input
+                value={draft.fullName}
+                onChange={(event) => {
+                  setDraft((previous) => ({
+                    ...previous,
+                    fullName: event.target.value,
+                  }));
+                  setStatusMessage(null);
+                  setErrorMessage(null);
+                }}
+                placeholder="Jordan Smith"
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+                maxLength={100}
+                autoComplete="name"
+              />
+            </label>
+
+            <label className="flex flex-col gap-2 text-sm text-white md:col-span-2">
+              What are your AI interests?
+              <textarea
+                value={draft.interests}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setDraft((previous) => ({
+                    ...previous,
+                    interests: nextValue,
+                  }));
+                  setStatusMessage(null);
+                }}
+                placeholder="Share the topics, tools, or collaborations that inspire you."
+                className="min-h-[96px] resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+              />
+            </label>
+
+            <label className="flex flex-col gap-2 text-sm text-white md:col-span-2">
+              What types of media would you like to see on the site?
+              <textarea
+                value={draft.desiredMedia}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setDraft((previous) => ({
+                    ...previous,
+                    desiredMedia: nextValue,
+                  }));
+                  setStatusMessage(null);
+                }}
+                placeholder="Let us know which shows, films, or experiences you want."
+                className="min-h-[96px] resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+              />
+            </label>
+
+            <label className="flex flex-col gap-2 text-sm text-white max-w-xs">
+              Are you interested in collaborating with Eagle AI Productions? (Y/N)
+              <select
+                value={draft.collaborationInterest}
+                onChange={(event) => {
+                  const nextValue =
+                    event.target.value === "Y" || event.target.value === "N"
+                      ? (event.target.value as "Y" | "N")
+                      : "";
+                  setDraft((previous) => ({
+                    ...previous,
+                    collaborationInterest: nextValue,
+                  }));
+                  setStatusMessage(null);
+                }}
+                className="rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+              >
+                <option value="">Select</option>
+                <option value="Y">Y</option>
+                <option value="N">N</option>
+              </select>
+            </label>
+
+            <div className="flex items-center justify-end gap-4 md:col-span-2">
+              {errorMessage ? (
+                <p className="text-sm font-medium text-red-400">{errorMessage}</p>
+              ) : null}
+              {statusMessage ? (
+                <p className="text-sm font-medium text-emerald-300">
+                  {statusMessage}
+                </p>
+              ) : null}
+              <button
+                type="submit"
+                className="rounded-full bg-blue-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-400"
+              >
+                Save profile
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="mt-10">
+          <h3 className="text-lg font-semibold text-white">
+            Do you have any feedback?
+          </h3>
+          <form className="mt-4 space-y-4" onSubmit={handleFeedbackSubmit}>
+            <textarea
+              value={feedbackDraft}
+              onChange={(event) => {
+                setFeedbackDraft(event.target.value);
+                setFeedbackError(null);
+              }}
+              placeholder="Share ideas, requests, or observations for the Eagle AI Pictures team."
+              className="min-h-[120px] w-full resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+            />
+            {feedbackError ? (
+              <p className="text-sm font-medium text-red-400">{feedbackError}</p>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-white">
+              <span>{feedback.length} / 5 submissions recorded</span>
+              <button
+                type="submit"
+                className="rounded-full bg-blue-500 px-6 py-3 font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-blue-500"
+                disabled={feedback.length >= 5}
+              >
+                Record feedback
+              </button>
+            </div>
+          </form>
+          <div className="mt-6 space-y-4">
+            {feedback.length === 0 ? (
+              <p className="text-sm text-white">
+                No feedback submissions yet. Share a note to help us improve.
+              </p>
+            ) : (
+              feedback.map((entry) => (
+                <article
+                  key={entry.id}
+                  className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 text-sm text-white"
+                >
+                  <p>{entry.text}</p>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-white">
+                    <span>{new Date(entry.createdAt).toLocaleString()}</span>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveFeedback(entry.id)}
+                      className="rounded-full border border-white/20 px-4 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="mt-12">
+          <h3 className="text-lg font-semibold text-white">My Uploads</h3>
+          <p className="mt-2 text-sm text-white">
+            Manage the videos published under {user.email}.
+          </p>
+          <div className="mt-6 space-y-6">
+            {videos.length === 0 ? (
+              <p className="text-sm text-white">
+                You have not published any videos yet. Upload to see them here.
+              </p>
+            ) : (
+              videos.map((video) => (
+                <ProfileUploadEditor
+                  key={video.id}
+                  video={video}
+                  categories={CATEGORY_OPTIONS}
+                  onUpdateVideo={onUpdateVideo}
+                  onDeleteVideo={onDeleteVideo}
+                />
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+type ProfileUploadEditorProps = {
+  video: Video;
+  categories: readonly string[];
+  onUpdateVideo: (
+    id: string,
+    updates: { title: string; description: string; categories: string[] }
+  ) => Promise<{ success: boolean; error?: string }>;
+  onDeleteVideo: (id: string) => Promise<{ success: boolean; error?: string }>;
+};
+
+function ProfileUploadEditor({
+  video,
+  categories,
+  onUpdateVideo,
+  onDeleteVideo,
+}: ProfileUploadEditorProps) {
+  const [formState, setFormState] = useState<{
+    title: string;
+    description: string;
+    categories: string[];
+  }>({
+    title: video.title ?? "",
+    description: video.description ?? "",
+    categories: [...video.categories],
+  });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const createdAtDisplay = useMemo(
+    () => new Date(video.createdAt).toLocaleString(),
+    [video.createdAt]
+  );
+
+  useEffect(() => {
+    setFormState({
+      title: video.title ?? "",
+      description: video.description ?? "",
+      categories: [...video.categories],
+    });
+    setFormError(null);
+    setFormSuccess(null);
+  }, [video]);
+
+  useEffect(() => {
+    if (!formSuccess) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFormSuccess(null);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [formSuccess]);
+
+  const handleToggleCategory = (category: string) => {
+    setFormState((previous) => {
+      const alreadySelected = previous.categories.includes(category);
+
+      if (alreadySelected) {
+        setFormError(null);
+        return {
+          ...previous,
+          categories: previous.categories.filter((item) => item !== category),
+        };
+      }
+
+      if (previous.categories.length >= 3) {
+        setFormError("Select up to three categories.");
+        return previous;
+      }
+
+      setFormError(null);
+      return {
+        ...previous,
+        categories: [...previous.categories, category],
+      };
+    });
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSaving(true);
+    setFormError(null);
+    setFormSuccess(null);
+
+    const result = await onUpdateVideo(video.id, {
+      title: formState.title,
+      description: formState.description,
+      categories: formState.categories,
+    });
+
+    if (!result.success) {
+      setFormError(result.error ?? "Unable to save changes.");
+      setIsSaving(false);
+      return;
+    }
+
+    setFormSuccess("Saved.");
+    setIsSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Delete this upload? This action cannot be undone."
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setIsDeleting(true);
+    setFormError(null);
+    setFormSuccess(null);
+
+    const result = await onDeleteVideo(video.id);
+
+    if (!result.success) {
+      setFormError(result.error ?? "Unable to delete this upload.");
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <form
+      className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-white"
+      onSubmit={handleSubmit}
+    >
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h4 className="text-lg font-semibold text-white">
+            {formState.title.trim() || "Untitled Upload"}
+          </h4>
+          <p className="text-xs text-white">{createdAtDisplay}</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="submit"
+            className="rounded-full bg-blue-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-blue-500"
+            disabled={isSaving}
+          >
+            {isSaving ? "Saving..." : "Save changes"}
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="rounded-full border border-white/20 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-red-400 hover:text-red-300"
+            disabled={isDeleting}
+          >
+            {isDeleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <label className="flex flex-col gap-2 text-sm text-white">
+          Title
+          <input
+            value={formState.title}
+            onChange={(event) => {
+              setFormState((previous) => ({
+                ...previous,
+                title: event.target.value,
+              }));
+              setFormSuccess(null);
+            }}
+            placeholder="Update your title"
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+            maxLength={80}
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm text-white md:col-span-2">
+          Description
+          <textarea
+            value={formState.description}
+            onChange={(event) => {
+              setFormState((previous) => ({
+                ...previous,
+                description: event.target.value,
+              }));
+              setFormSuccess(null);
+            }}
+            placeholder="Edit the story behind your video"
+            className="min-h-[96px] resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+          />
+        </label>
+      </div>
+
+      <div className="mt-6">
+        <p className="text-xs uppercase tracking-[0.2em] text-white">Categories</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {categories.map((category) => {
+            const isSelected = formState.categories.includes(category);
+            return (
+              <button
+                key={`${video.id}-${category}`}
+                type="button"
+                onClick={() => handleToggleCategory(category)}
+                className={`rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${
+                  isSelected
+                    ? "border-blue-500 bg-blue-500/20 text-white"
+                    : "border-white/15 bg-white/[0.04] text-white hover:border-white/40"
+                }`}
+              >
+                {category}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {formError ? (
+        <p className="mt-4 text-sm font-medium text-red-400">{formError}</p>
+      ) : null}
+      {formSuccess ? (
+        <p className="mt-4 text-sm font-medium text-emerald-300">
+          {formSuccess}
+        </p>
+      ) : null}
+    </form>
   );
 }
 
@@ -1182,14 +2132,14 @@ function VideoCard({
           </span>
         ) : null}
         <h3 className="mt-3 text-lg font-medium">{displayTitle}</h3>
-        <p className="mt-2 text-xs uppercase tracking-[0.3em] text-neutral-500">
+        <p className="mt-2 text-xs uppercase tracking-[0.3em] text-white">
           {displayName}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {video.categories.map((category) => (
             <span
               key={`${video.id}-${category}`}
-              className="inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300"
+              className="inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.4em] text-white"
             >
               {category}
             </span>
@@ -1205,7 +2155,7 @@ function VideoCard({
             className={`mt-4 inline-flex items-center rounded-full border px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${
               video.isTopRated
                 ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
-                : "border-white/20 text-neutral-300 hover:border-blue-500 hover:text-white"
+                : "border-white/20 text-white hover:border-blue-500 hover:text-white"
             }`}
           >
             {video.isTopRated ? "Remove Top Rated" : "Feature Top Rated"}
@@ -1241,11 +2191,11 @@ function PromptDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="text-xl font-semibold tracking-wide">{title}</h3>
-        <p className="mt-3 text-sm text-neutral-400">{description}</p>
+        <p className="mt-3 text-sm text-white">{description}</p>
         {errorMessage ? (
           <p className="mt-4 text-xs font-semibold text-red-400">{errorMessage}</p>
         ) : null}
-        <p className="mt-4 text-xs text-neutral-500">
+        <p className="mt-4 text-xs text-white">
           By continuing you agree to our{" "}
           <a
             href="/privacy"
@@ -1296,11 +2246,11 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="text-xl font-semibold tracking-wide">About Us</h3>
-        <p className="mt-4 text-sm text-neutral-300">
+        <p className="mt-4 text-sm text-white">
           Welcome to the studio! We&apos;re here to highlight AI content in a quickly
           evolving entertainment space.
         </p>
-        <p className="mt-4 text-sm text-neutral-300">
+        <p className="mt-4 text-sm text-white">
           —{" "}
           <a
             href="https://www.linkedin.com/in/andrewjbilden/"

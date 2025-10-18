@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "aihomestudios",
-  description: "AI Home Studios spotlight for AI-powered video creators.",
+  title: "Eagle AI Pictures",
+  description: "Eagle AI Pictures spotlight for AI-powered video creators.",
 };
 
 export default function RootLayout({
