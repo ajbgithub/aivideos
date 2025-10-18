@@ -6,7 +6,9 @@ import {
   type StoredVideo,
   type VideoSource,
 } from "@/data/initialVideos";
+import { ShareIcon } from "@/components/icons/ShareIcon";
 import { supabase } from "@/lib/supabaseClient";
+import { mapDatabaseVideo } from "@/lib/mapDatabaseVideo";
 import type { User as SupabaseAuthUser } from "@supabase/supabase-js";
 import {
   ChangeEvent,
@@ -17,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 
 type User = {
   name: string;
@@ -43,8 +46,9 @@ const initialVideos: Video[] = INITIAL_VIDEOS.map((video) => ({ ...video }));
 const ADMIN_EMAIL = "mbamoveteam@gmail.com";
 
 export default function Home() {
-  const [videos, setVideos] = useState<Video[]>(initialVideos);
-  const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
+  const router = useRouter();
+  const [seedVideos, setSeedVideos] = useState<Video[]>(initialVideos);
+  const [uploadedVideos, setUploadedVideos] = useState<Video[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [authPrompt, setAuthPrompt] = useState(false);
@@ -54,16 +58,12 @@ export default function Home() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
-  const objectUrls = useRef<Set<string>>(new Set());
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasInitialisedSelection = useRef(false);
 
   useEffect(() => {
-    const urls = objectUrls.current;
-
     return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-      urls.clear();
       if (shareTimeoutRef.current) {
         clearTimeout(shareTimeoutRef.current);
       }
@@ -162,47 +162,48 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || hasInitialisedSelection.current) {
-      return;
-    }
+    let isMounted = true;
 
-    if (!videos.length) {
-      return;
-    }
+    const loadPosts = async () => {
+      setIsLoadingPosts(true);
+      setPostError(null);
 
-    const params = new URLSearchParams(window.location.search);
-    const videoId = params.get("video");
+      const { data, error } = await supabase
+        .from("videos")
+        .select(
+          "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+        )
+        .order("created_at", { ascending: false });
 
-    if (videoId) {
-      const matchingVideo = videos.find((video) => video.id === videoId);
-
-      if (matchingVideo) {
-        setSelectedVideo(matchingVideo);
+      if (!isMounted) {
+        return;
       }
-    }
 
-    hasInitialisedSelection.current = true;
-  }, [videos]);
+      setIsLoadingPosts(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+      if (error) {
+        setPostError(error.message);
+        return;
+      }
 
-    if (!hasInitialisedSelection.current && !selectedVideo) {
-      return;
-    }
+      if (!data) {
+        setUploadedVideos([]);
+        return;
+      }
 
-    const url = new URL(window.location.toString());
+      const mapped = data
+        .map(mapDatabaseVideo)
+        .filter((item): item is Video => Boolean(item));
 
-    if (selectedVideo) {
-      url.searchParams.set("video", selectedVideo.id);
-    } else {
-      url.searchParams.delete("video");
-    }
+      setUploadedVideos(mapped);
+    };
 
-    window.history.replaceState({}, "", url.toString());
-  }, [selectedVideo]);
+    loadPosts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const isAuthenticated = Boolean(user);
   const isAdmin = user?.email === ADMIN_EMAIL;
@@ -264,7 +265,6 @@ export default function Home() {
     }
 
     setUser(null);
-    setSelectedVideo(null);
     setShowUploadForm(false);
   }, []);
 
@@ -318,11 +318,7 @@ export default function Home() {
       }
 
       const baseUrl = window.location.origin;
-      const useRuntimeModal =
-        video.source === "file" || video.url.startsWith("blob:");
-      const shareUrl = useRuntimeModal
-        ? `${baseUrl}${window.location.pathname}?video=${encodeURIComponent(video.id)}`
-        : `${baseUrl}/video/${encodeURIComponent(video.id)}`;
+      const shareUrl = `${baseUrl}/video/${encodeURIComponent(video.id)}`;
       const clipboardText = `Hey, check out this video on aihomestudios! ${shareUrl}`;
 
       try {
@@ -340,66 +336,138 @@ export default function Home() {
   );
 
   const handleUploadSubmit = useCallback(
-    (payload: UploadPayload) => {
-      if (!user || (!payload.videoFile && !payload.videoLink)) {
-        return;
+    async (
+      payload: UploadPayload
+    ): Promise<{ success: boolean; error?: string }> => {
+      if (!user) {
+        return { success: false, error: "Please sign in to upload." };
       }
 
-      const nextVideos = [...videos];
-      const now = new Date().toISOString();
-      const trimmedFullName = payload.fullName.trim();
-      const displayName = trimmedFullName || user.name;
+      try {
+        const hasFile = Boolean(payload.videoFile);
+        const hasLink = Boolean(payload.videoLink.trim());
 
-      if (payload.videoFile) {
-        const objectUrl = URL.createObjectURL(payload.videoFile);
-        objectUrls.current.add(objectUrl);
+        if (!hasFile && !hasLink) {
+          return { success: false, error: "Add a link or upload a file." };
+        }
 
-        nextVideos.unshift({
-          id: `upload-${Date.now()}`,
-          title: payload.title || undefined,
-          description: payload.description || undefined,
-          url: objectUrl,
-          source: "file",
-          uploader: {
-            name: displayName,
-            email: user.email,
-          },
-          createdAt: now,
-          viewCount: 0,
-          isTopRated: false,
-          categories: [...payload.categories],
-          fullName: trimmedFullName || undefined,
-        });
-      } else if (payload.videoLink) {
-        const { url, source } = normaliseLink(payload.videoLink);
+        const trimmedFullName = payload.fullName.trim();
+        const displayName = trimmedFullName || user.name;
+        let source: VideoSource = "external";
+        let videoUrl: string | null = null;
+        let storageObjectPath: string | null = null;
 
-        nextVideos.unshift({
-          id: `link-${Date.now()}`,
-          title: payload.title || undefined,
-          description: payload.description || undefined,
-          url,
+        if (payload.videoFile) {
+          const file = payload.videoFile;
+          const extensionMatch = file.name.match(/\.([a-zA-Z0-9]+)$/);
+          const extension = extensionMatch ? `.${extensionMatch[1]}` : "";
+          const baseName = file.name.replace(/\.[^/.]+$/, "");
+          const safeBaseName = baseName
+            .toLowerCase()
+            .replace(/[^a-z0-9-_]+/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/(^-|-$)/g, "");
+          const uniqueSuffix = `${Date.now()}`;
+          const pathSegments = [
+            user.email,
+            `${safeBaseName || "upload"}-${uniqueSuffix}${extension}`,
+          ]
+            .join("/")
+            .replace(/[^a-zA-Z0-9./_-]/g, "");
+          storageObjectPath = pathSegments;
+
+          const { error: uploadError } = await supabase.storage
+            .from("ai_videos")
+            .upload(storageObjectPath, file, {
+              cacheControl: "3600",
+              upsert: false,
+              contentType: file.type || "application/octet-stream",
+            });
+
+          if (uploadError) {
+            return { success: false, error: uploadError.message };
+          }
+
+          const {
+            data: { publicUrl },
+          } = supabase.storage
+            .from("ai_videos")
+            .getPublicUrl(storageObjectPath);
+
+          videoUrl = publicUrl;
+          source = "file";
+        } else if (hasLink) {
+          const { url, source: derivedSource } = normaliseLink(
+            payload.videoLink.trim()
+          );
+          videoUrl = url;
+          source = derivedSource;
+        }
+
+        if (!videoUrl) {
+          return { success: false, error: "Unable to determine a video URL." };
+        }
+
+        const insertPayload = {
+          title: payload.title.trim() || null,
+          description: payload.description.trim() || null,
+          video_url: videoUrl,
           source,
-          uploader: {
-            name: displayName,
-            email: user.email,
-          },
-          createdAt: now,
-          viewCount: 0,
-          isTopRated: false,
-          categories: [...payload.categories],
-          fullName: trimmedFullName || undefined,
-        });
-      }
+          storage_object_path: storageObjectPath,
+          categories: payload.categories.slice(0, 3),
+          full_name: trimmedFullName || null,
+          view_count: 0,
+          is_top_rated: false,
+          uploader_name: displayName,
+          uploader_email: user.email,
+        };
 
-      setVideos(nextVideos);
-      setShowUploadForm(false);
+        const { data, error } = await supabase
+          .from("videos")
+          .insert(insertPayload)
+          .select(
+            "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+          )
+          .maybeSingle();
+
+        if (error) {
+          return { success: false, error: error.message };
+        }
+
+        const mapped = data ? mapDatabaseVideo(data) : null;
+
+        if (!mapped) {
+          return {
+            success: false,
+            error:
+              "Upload succeeded but the post could not be loaded. Please refresh.",
+          };
+        }
+
+        setUploadedVideos((previousVideos) => [mapped, ...previousVideos]);
+        setShowUploadForm(false);
+
+        return { success: true };
+      } catch (unknownError) {
+        return {
+          success: false,
+          error:
+            unknownError instanceof Error
+              ? unknownError.message
+              : "Unexpected error while uploading. Please try again.",
+        };
+      }
     },
-    [user, videos]
+    [user]
   );
 
+  const allVideos = useMemo(
+    () => [...uploadedVideos, ...seedVideos],
+    [uploadedVideos, seedVideos]
+  );
   const regularVideos = useMemo(
-    () => videos.filter((video) => !video.isTopRated),
-    [videos]
+    () => allVideos.filter((video) => !video.isTopRated),
+    [allVideos]
   );
   const videosToDisplay = useMemo(() => {
     if (selectedCategory === "All") {
@@ -409,8 +477,8 @@ export default function Home() {
     return regularVideos.filter((video) => video.categories.includes(selectedCategory));
   }, [regularVideos, selectedCategory]);
   const topRatedVideos = useMemo(
-    () => videos.filter((video) => video.isTopRated),
-    [videos]
+    () => allVideos.filter((video) => video.isTopRated),
+    [allVideos]
   );
   const promptCopy = useMemo(() => {
     if (authPromptContext === "profile") {
@@ -430,21 +498,46 @@ export default function Home() {
     };
   }, [authPromptContext]);
 
-  const handleToggleTopRated = useCallback((videoId: string) => {
-    setVideos((previousVideos) => {
-      const updatedVideos = previousVideos.map((video) =>
-        video.id === videoId ? { ...video, isTopRated: !video.isTopRated } : video
-      );
-      const refreshedSelection =
-        updatedVideos.find((video) => video.id === videoId) ?? null;
+  const handleToggleTopRated = useCallback(
+    async (video: Video) => {
+      if (!isAdmin) {
+        return;
+      }
 
-      setSelectedVideo((current) =>
-        current?.id === videoId ? refreshedSelection : current
+      const nextValue = !video.isTopRated;
+      setPostError(null);
+
+      const isUploadedVideo = uploadedVideos.some(
+        (item) => item.id === video.id
       );
 
-      return updatedVideos;
-    });
-  }, []);
+      if (isUploadedVideo) {
+        const { error } = await supabase
+          .from("videos")
+          .update({ is_top_rated: nextValue })
+          .eq("id", video.id);
+
+        if (error) {
+          setPostError("Failed to update Top Rated status. Try again.");
+          return;
+        }
+
+        setUploadedVideos((previousVideos) =>
+          previousVideos.map((item) =>
+            item.id === video.id ? { ...item, isTopRated: nextValue } : item
+          )
+        );
+        return;
+      }
+
+      setSeedVideos((previousVideos) =>
+        previousVideos.map((item) =>
+          item.id === video.id ? { ...item, isTopRated: nextValue } : item
+        )
+      );
+    },
+    [isAdmin, uploadedVideos]
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-black text-white">
@@ -547,9 +640,10 @@ export default function Home() {
                 <VideoCard
                   key={`top-${video.id}`}
                   video={video}
-                  isActive={selectedVideo?.id === video.id}
-                  onSelect={() => setSelectedVideo(video)}
+                  onOpen={() => router.push(`/video/${video.id}`)}
                   onShare={() => handleShareVideo(video)}
+                  isAdmin={isAdmin}
+                  onToggleTopRated={() => handleToggleTopRated(video)}
                 />
               ))}
             </div>
@@ -568,90 +662,34 @@ export default function Home() {
             Fresh uploads and discoveries from across AI Home Studios.
           </p>
         </section>
-        <section className="flex h-[calc(100vh-240px)] gap-8">
-          <div className="flex-1 overflow-hidden">
-            <div className="grid h-full grid-cols-1 gap-6 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
-              {videosToDisplay.map((video) => (
-                <VideoCard
-                  key={video.id}
-                  video={video}
-                  isActive={selectedVideo?.id === video.id}
-                  onSelect={() => setSelectedVideo(video)}
-                  onShare={() => handleShareVideo(video)}
-                />
-              ))}
+        <section className="space-y-6">
+          {postError ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {postError}
             </div>
+          ) : null}
+          {isLoadingPosts ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-neutral-300">
+              Loading community posts...
+            </div>
+          ) : null}
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {videosToDisplay.map((video) => (
+              <VideoCard
+                key={video.id}
+                video={video}
+                onOpen={() => router.push(`/video/${video.id}`)}
+                onShare={() => handleShareVideo(video)}
+                isAdmin={isAdmin}
+                onToggleTopRated={() => handleToggleTopRated(video)}
+              />
+            ))}
           </div>
-
-          {selectedVideo ? (
-            <aside className="hidden w-full max-w-sm flex-col rounded-3xl border border-white/10 bg-white/[0.06] px-8 py-10 backdrop-blur md:flex">
-              <span className="text-xs uppercase tracking-[0.4em] text-neutral-500">
-                Featured video
-              </span>
-              <h2 className="mt-6 text-3xl font-semibold tracking-wide">
-                {selectedVideo.title ?? "Untitled Upload"}
-              </h2>
-              <p className="mt-3 text-sm text-neutral-300">
-                {selectedVideo.fullName ?? toTitleCase(selectedVideo.uploader.name)}
-              </p>
-              {selectedVideo.uploader.email ? (
-                <p className="text-xs text-neutral-500">
-                  {selectedVideo.uploader.email}
-                </p>
-              ) : null}
-              <p className="mt-3 text-xs uppercase tracking-[0.3em] text-neutral-500">
-                {selectedVideo.viewCount.toLocaleString()} views
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {selectedVideo.categories.map((category) => (
-                  <span
-                    key={`${selectedVideo.id}-${category}`}
-                    className="inline-flex items-center rounded-full border border-white/10 px-4 py-1 text-[10px] uppercase tracking-[0.4em] text-neutral-300"
-                  >
-                    {category}
-                  </span>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleShareVideo(selectedVideo)}
-                className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
-              >
-                <ShareIcon small />
-                Share
-              </button>
-              {isAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => handleToggleTopRated(selectedVideo.id)}
-                  className={`mt-6 rounded-full border px-5 py-2 text-xs font-semibold tracking-wide transition ${
-                    selectedVideo.isTopRated
-                      ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
-                      : "border-white/20 text-neutral-300 hover:border-blue-500 hover:text-white"
-                  }`}
-                >
-                  {selectedVideo.isTopRated
-                    ? "Remove from Top Rated"
-                    : "Feature in Top Rated"}
-                </button>
-              ) : null}
-              {selectedVideo.description ? (
-                <p className="mt-6 text-sm leading-relaxed text-neutral-300">
-                  {selectedVideo.description}
-                </p>
-              ) : null}
-              <p className="mt-auto text-xs uppercase tracking-[0.3em] text-neutral-500">
-                {new Date(selectedVideo.createdAt).toLocaleDateString()}
-              </p>
-            </aside>
-          ) : (
-            <aside className="hidden w-full max-w-sm flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-white/[0.04] text-neutral-500 md:flex">
-              <p className="px-12 text-center text-sm leading-relaxed">
-                Select any video tile to see who created it and the story behind
-                the upload.
-              </p>
-            </aside>
-          )}
+          {!isLoadingPosts && videosToDisplay.length === 0 ? (
+            <p className="text-sm text-neutral-500">
+              No community posts yet. Be the first to upload your AI-powered creation.
+            </p>
+          ) : null}
         </section>
       </main>
 
@@ -727,7 +765,9 @@ function UploadModal({
   categories,
 }: {
   onClose: () => void;
-  onSubmit: (payload: UploadPayload) => void;
+  onSubmit: (
+    payload: UploadPayload
+  ) => Promise<{ success: boolean; error?: string }>;
   user: User;
   categories: readonly string[];
 }) {
@@ -749,6 +789,7 @@ function UploadModal({
   });
   const [error, setError] = useState<string | null>(null);
   const [hasAgreed, setHasAgreed] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const hasVideoLink = Boolean(formState.videoLink.trim());
   const hasVideoFile = Boolean(formState.videoFile);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -813,10 +854,11 @@ function UploadModal({
   const handleClose = () => {
     setHasAgreed(false);
     setError(null);
+    setIsSubmitting(false);
     onClose();
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (formState.categories.length === 0) {
@@ -847,20 +889,33 @@ function UploadModal({
     }
 
     setError(null);
-    onSubmit({
-      ...formState,
-      videoLink: formState.videoLink.trim(),
-      fullName: formState.fullName.trim(),
-    });
-    setFormState({
-      title: "",
-      description: "",
-      videoLink: "",
-      videoFile: null,
-      categories: [...initialCategorySelection],
-      fullName: user.name,
-    });
-    setHasAgreed(false);
+    setIsSubmitting(true);
+    try {
+      const result = await onSubmit({
+        ...formState,
+        videoLink: formState.videoLink.trim(),
+        fullName: formState.fullName.trim(),
+      });
+
+      if (!result.success) {
+        setError(result.error ?? "Unable to share video right now.");
+        return;
+      }
+
+      setFormState({
+        title: "",
+        description: "",
+        videoLink: "",
+        videoFile: null,
+        categories: [...initialCategorySelection],
+        fullName: user.name,
+      });
+      setHasAgreed(false);
+    } catch {
+      setError("Something went wrong while sharing your video. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -1043,10 +1098,10 @@ function UploadModal({
             </button>
             <button
               type="submit"
-              disabled={!hasAgreed}
+              disabled={!hasAgreed || isSubmitting}
               className="rounded-full bg-blue-500 px-6 py-3 font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-500"
             >
-              Share video
+              {isSubmitting ? "Sharing..." : "Share video"}
             </button>
           </div>
         </form>
@@ -1057,14 +1112,16 @@ function UploadModal({
 
 function VideoCard({
   video,
-  isActive,
-  onSelect,
+  onOpen,
   onShare,
+  isAdmin,
+  onToggleTopRated,
 }: {
   video: Video;
-  isActive: boolean;
-  onSelect: () => void;
+  onOpen: () => void;
   onShare: () => void;
+  isAdmin: boolean;
+  onToggleTopRated?: () => void;
 }) {
   const displayTitle = video.title ?? "Untitled Upload";
   const displayName = video.fullName ?? toTitleCase(video.uploader.name);
@@ -1072,9 +1129,9 @@ function VideoCard({
   return (
     <article
       className={`relative flex cursor-pointer flex-col rounded-3xl border ${
-        isActive ? "border-blue-500" : "border-white/10"
+        video.isTopRated ? "border-blue-500" : "border-white/10"
       } bg-white/[0.04] p-5 transition hover:border-blue-500`}
-      onClick={onSelect}
+      onClick={onOpen}
     >
       <div className="relative aspect-video overflow-hidden rounded-2xl bg-black">
         {video.source === "youtube" || video.source === "instagram" ? (
@@ -1138,6 +1195,22 @@ function VideoCard({
             </span>
           ))}
         </div>
+        {isAdmin && onToggleTopRated ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleTopRated();
+            }}
+            className={`mt-4 inline-flex items-center rounded-full border px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${
+              video.isTopRated
+                ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
+                : "border-white/20 text-neutral-300 hover:border-blue-500 hover:text-white"
+            }`}
+          >
+            {video.isTopRated ? "Remove Top Rated" : "Feature Top Rated"}
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -1267,34 +1340,6 @@ function ProfileIcon() {
       />
       <path
         d="M5.5 19.75v-.5a4.75 4.75 0 0 1 4.75-4.75h3.5a4.75 4.75 0 0 1 4.75 4.75v.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function ShareIcon({ small = false }: { small?: boolean }) {
-  const sizeClass = small ? "size-3" : "size-4";
-
-  return (
-    <svg
-      className={sizeClass}
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M15.5 5.5L20.5 10.5L15.5 15.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M20.5 10.5H10.5C7.73858 10.5 5.5 12.7386 5.5 15.5V18.5"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
