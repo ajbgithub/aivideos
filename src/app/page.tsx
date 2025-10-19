@@ -131,6 +131,12 @@ export default function Home() {
   const [subscriptionSubmitting, setSubscriptionSubmitting] = useState(false);
   const [subscriptionSuccessMessage, setSubscriptionSuccessMessage] = useState<string | null>(null);
   const [subscriptionErrorMessage, setSubscriptionErrorMessage] = useState<string | null>(null);
+
+  const isAuthenticated = Boolean(user);
+  const userEmail = user?.email ?? null;
+  const userId = user?.id ?? null;
+  const isAdmin = userEmail === ADMIN_EMAIL;
+
   const profileStorageKey = useMemo(
     () => (user?.email ? `${PROFILE_STORAGE_PREFIX}${user.email}` : null),
     [user?.email]
@@ -178,7 +184,7 @@ export default function Home() {
         clearTimeout(shareTimeoutRef.current);
       }
     };
-  }, [userEmail]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user) {
@@ -575,11 +581,6 @@ export default function Home() {
       isMounted = false;
     };
   }, [userEmail]);
-
-  const isAuthenticated = Boolean(user);
-  const isAdmin = user?.email === ADMIN_EMAIL;
-  const userEmail = user?.email ?? null;
-  const userId = user?.id ?? null;
 
   const handleGoogleSignIn = useCallback(async () => {
     if (typeof window === "undefined") {
