@@ -1,4 +1,11 @@
-export type VideoSource = "file" | "youtube" | "instagram" | "tiktok" | "external";
+export type VideoSource =
+  | "file"
+  | "youtube"
+  | "instagram"
+  | "tiktok"
+  | "spotify"
+  | "apple-podcasts"
+  | "external";
 
 export type StoredVideo = {
   id: string;

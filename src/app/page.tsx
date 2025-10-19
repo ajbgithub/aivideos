@@ -96,6 +96,11 @@ function createFeedbackEntry(text: string): FeedbackEntry {
 }
 
 const initialVideos: Video[] = INITIAL_VIDEOS.map((video) => ({ ...video }));
+const SEEDED_TOP_RATED_IDS = new Set([
+  "vid-ea-01",
+  "vid-ea-02",
+  "vid-ea-03",
+]);
 
 const ADMIN_EMAIL = "mbamoveteam@gmail.com";
 
@@ -2021,7 +2026,7 @@ function UploadModal({
           </div>
 
           <label className="flex flex-col gap-3 text-sm">
-            Video link (YouTube, Instagram, TikTok, or file URL)
+            Video or audio link (YouTube, Instagram, TikTok, Spotify, Apple Podcasts, or hosted file URL)
             <input
               value={formState.videoLink}
               onChange={handleLinkInputChange}
@@ -2030,8 +2035,8 @@ function UploadModal({
               disabled={hasVideoFile}
               ref={linkInputRef}
             />
-            <span className="text-xs text-white">
-              Paste a link to feature your hosted video. Adding a link disables file uploads.
+              <span className="text-xs text-white">
+                Paste a link to feature hosted media. Adding a link disables file uploads.
             </span>
           </label>
 
@@ -3009,7 +3014,7 @@ function ProfileUploadEditor({
           {mediaExpanded ? (
             <div className="space-y-4 border-t border-white/10 p-4">
               <label className="flex flex-col gap-2 text-sm text-white">
-                Video link (YouTube, Instagram, TikTok, or file URL)
+                Video or audio link (YouTube, Instagram, TikTok, Spotify, Apple Podcasts, or hosted file URL)
                 <input
                   value={mediaLink}
                   onChange={handleMediaLinkChange}
@@ -3091,6 +3096,7 @@ function VideoCard({
             className="h-full w-full"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
+            style={{ border: 0 }}
           />
         ) : video.source === "tiktok" ? (
           <iframe
@@ -3099,6 +3105,26 @@ function VideoCard({
             className="h-full w-full"
             allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
             allowFullScreen
+            style={{ border: 0 }}
+          />
+        ) : video.source === "spotify" ? (
+          <iframe
+            src={video.url}
+            title={video.title ?? "Spotify embed"}
+            className="h-full w-full"
+            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+            loading="lazy"
+            style={{ border: 0 }}
+          />
+        ) : video.source === "apple-podcasts" ? (
+          <iframe
+            src={video.url}
+            title={video.title ?? "Apple Podcasts embed"}
+            className="h-full w-full"
+            allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write"
+            sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
+            loading="lazy"
+            style={{ border: 0 }}
           />
         ) : (
           <video
@@ -3120,7 +3146,7 @@ function VideoCard({
           event.stopPropagation();
           onShare();
         }}
-        className="absolute bottom-4 right-4 flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:border-white hover:bg-white/20"
+        className="absolute top-4 right-4 flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:border-white hover:bg-white/20"
         aria-label="Share video link"
       >
         <ShareIcon />
@@ -3372,6 +3398,41 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
       }
     }
 
+    if (host.includes("spotify.com")) {
+      const segments = url.pathname.split("/").filter(Boolean);
+      const resourceType = segments[0];
+      const resourceId = segments[1];
+      if (resourceType && resourceId) {
+        const embedTypeMap: Record<string, string> = {
+          episode: "episode",
+          show: "show",
+          playlist: "playlist",
+          track: "track",
+          album: "album",
+        };
+        const embedSegment = embedTypeMap[resourceType];
+        if (embedSegment) {
+          return {
+            url: `https://open.spotify.com/embed/${embedSegment}/${resourceId}`,
+            source: "spotify",
+          };
+        }
+      }
+    }
+
+    if (host.includes("podcasts.apple.com")) {
+      const embedUrl = host.startsWith("embed.")
+        ? input
+        : input.replace(
+            /^https?:\/\/podcasts\.apple\.com/i,
+            "https://embed.podcasts.apple.com"
+          );
+      return {
+        url: embedUrl,
+        source: "apple-podcasts",
+      };
+    }
+
     return { url: input, source: "external" };
   } catch {
     return { url: input, source: "external" };
@@ -3380,6 +3441,7 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
 
 function toTitleCase(input: string) {
   return input
+    .replace(/[-_]+/g, " ")
     .split(" ")
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))

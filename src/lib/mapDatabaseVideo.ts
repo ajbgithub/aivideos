@@ -62,6 +62,8 @@ function isValidVideoSource(value: string | null): value is VideoSource {
     "youtube",
     "instagram",
     "tiktok",
+    "spotify",
+    "apple-podcasts",
     "external",
   ];
 
