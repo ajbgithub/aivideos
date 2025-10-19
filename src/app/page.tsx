@@ -228,7 +228,7 @@ export default function Home() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [userEmail]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -258,7 +258,7 @@ export default function Home() {
       currentUrl.search = params.toString();
       window.history.replaceState({}, "", currentUrl.toString());
     }
-  }, [userEmail]);
+  }, []);
 
   useEffect(() => {
     if (!user || !profileStorageKey) {
@@ -450,18 +450,26 @@ export default function Home() {
       return;
     }
 
-    setSubscriptionStatus("loading");
-    setSubscriptionSuccessMessage(null);
-    setSubscriptionErrorMessage(null);
-    setSubscriptionSubmitting(false);
-    setSubscriptionIsEnrolled(false);
+    let isActive = true;
 
-    supabase
-      .from("subscription_waitlist")
-      .select("id")
-      .eq("user_email", user.email)
-      .maybeSingle()
-      .then(({ data, error }) => {
+    const loadWaitlistStatus = async () => {
+      setSubscriptionStatus("loading");
+      setSubscriptionSuccessMessage(null);
+      setSubscriptionErrorMessage(null);
+      setSubscriptionSubmitting(false);
+      setSubscriptionIsEnrolled(false);
+
+      try {
+        const { data, error } = await supabase
+          .from("subscription_waitlist")
+          .select("id")
+          .eq("user_email", user.email)
+          .maybeSingle();
+
+        if (!isActive) {
+          return;
+        }
+
         if (error) {
           setSubscriptionStatus("error");
           setSubscriptionIsEnrolled(false);
@@ -470,11 +478,21 @@ export default function Home() {
 
         setSubscriptionIsEnrolled(Boolean(data));
         setSubscriptionStatus("loaded");
-      })
-      .catch(() => {
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
         setSubscriptionStatus("error");
         setSubscriptionIsEnrolled(false);
-      });
+      }
+    };
+
+    void loadWaitlistStatus();
+
+    return () => {
+      isActive = false;
+    };
   }, [showSubscriptionPanel, user]);
 
   useEffect(() => {
@@ -536,7 +554,7 @@ export default function Home() {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [userEmail]);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
