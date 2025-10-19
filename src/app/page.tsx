@@ -23,6 +23,7 @@ import {
 import { useRouter } from "next/navigation";
 
 type User = {
+  id: string;
   name: string;
   email: string;
   createdAt: string;
@@ -50,6 +51,7 @@ type ProfileData = {
   interests: string;
   desiredMedia: string;
   collaborationInterest: "Y" | "N" | "";
+  subscriptionInterest: "Y" | "N" | "";
   feedback: FeedbackEntry[];
 };
 type ProfileDetailsInput = Omit<ProfileData, "feedback">;
@@ -62,14 +64,17 @@ type ProfileVideoUpdate = {
 };
 
 const CATEGORIES = ["All", ...CATEGORY_OPTIONS];
-const DEFAULT_UPLOAD_CATEGORIES: string[] = [CATEGORY_OPTIONS[0]];
+const DEFAULT_UPLOAD_CATEGORIES: string[] = ["Films"];
 const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 500; // 500 MB
 const PROFILE_STORAGE_PREFIX = "eagle-profile-";
+const UPLOAD_FORM_STORAGE_KEY = "eagle-upload-draft";
+const UPLOAD_MODAL_FLAG_KEY = "eagle-upload-open";
 const DEFAULT_PROFILE_DATA: ProfileData = {
   fullName: "",
   interests: "",
   desiredMedia: "",
   collaborationInterest: "",
+  subscriptionInterest: "",
   feedback: [],
 };
 const ROTATING_LABELS = [
@@ -119,6 +124,13 @@ export default function Home() {
   const [showToolsPanel, setShowToolsPanel] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const toolsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] =
+    useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const [subscriptionIsEnrolled, setSubscriptionIsEnrolled] = useState(false);
+  const [subscriptionSubmitting, setSubscriptionSubmitting] = useState(false);
+  const [subscriptionSuccessMessage, setSubscriptionSuccessMessage] = useState<string | null>(null);
+  const [subscriptionErrorMessage, setSubscriptionErrorMessage] = useState<string | null>(null);
   const profileStorageKey = useMemo(
     () => (user?.email ? `${PROFILE_STORAGE_PREFIX}${user.email}` : null),
     [user?.email]
@@ -166,7 +178,33 @@ export default function Home() {
         clearTimeout(shareTimeoutRef.current);
       }
     };
-  }, []);
+  }, [userEmail]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !user) {
+      return;
+    }
+
+    const shouldReopen = window.sessionStorage.getItem(UPLOAD_MODAL_FLAG_KEY);
+
+    if (shouldReopen === "true") {
+      setShowUploadForm(true);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (showUploadForm) {
+      window.sessionStorage.setItem(UPLOAD_MODAL_FLAG_KEY, "true");
+    } else {
+      if (window.sessionStorage.getItem(UPLOAD_MODAL_FLAG_KEY)) {
+        window.sessionStorage.setItem(UPLOAD_MODAL_FLAG_KEY, "closed");
+      }
+    }
+  }, [showUploadForm]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -184,7 +222,7 @@ export default function Home() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -214,7 +252,7 @@ export default function Home() {
       currentUrl.search = params.toString();
       window.history.replaceState({}, "", currentUrl.toString());
     }
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     if (!user || !profileStorageKey) {
@@ -246,6 +284,9 @@ export default function Home() {
           collaborationInterest:
             (parsed.collaborationInterest as ProfileData["collaborationInterest"]) ??
             DEFAULT_PROFILE_DATA.collaborationInterest,
+          subscriptionInterest:
+            (parsed.subscriptionInterest as ProfileData["subscriptionInterest"]) ??
+            DEFAULT_PROFILE_DATA.subscriptionInterest,
           feedback: Array.isArray(parsed.feedback)
             ? (parsed.feedback as FeedbackEntry[]).slice(0, 5)
             : DEFAULT_PROFILE_DATA.feedback,
@@ -261,6 +302,52 @@ export default function Home() {
       fullName: user.name,
     });
   }, [profileStorageKey, user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadPreferences = async () => {
+      const { data, error } = await supabase
+        .from("profile_preferences")
+        .select(
+          "full_name, interests, desired_media, monetization_interest, subscription_interest"
+        )
+        .eq("user_email", user.email)
+        .maybeSingle();
+
+      if (!isMounted || error || !data) {
+        return;
+      }
+
+      setProfileData((previous) => ({
+        ...previous,
+        fullName:
+          data.full_name?.trim() || previous.fullName || user.name,
+        interests:
+          data.interests ?? previous.interests,
+        desiredMedia:
+          data.desired_media ?? previous.desiredMedia,
+        collaborationInterest:
+          data.monetization_interest === "Y" || data.monetization_interest === "N"
+            ? data.monetization_interest
+            : previous.collaborationInterest,
+        subscriptionInterest:
+          data.subscription_interest === "Y" || data.subscription_interest === "N"
+            ? data.subscription_interest
+            : previous.subscriptionInterest,
+      }));
+    };
+
+    loadPreferences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !profileStorageKey || !user) {
@@ -348,8 +435,41 @@ export default function Home() {
       setShowProfilePanel(false);
       setProfileData(DEFAULT_PROFILE_DATA);
       setShowToolsPanel(false);
+      setShowSubscriptionPanel(false);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!showSubscriptionPanel || !user) {
+      return;
+    }
+
+    setSubscriptionStatus("loading");
+    setSubscriptionSuccessMessage(null);
+    setSubscriptionErrorMessage(null);
+    setSubscriptionSubmitting(false);
+    setSubscriptionIsEnrolled(false);
+
+    supabase
+      .from("subscription_waitlist")
+      .select("id")
+      .eq("user_email", user.email)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          setSubscriptionStatus("error");
+          setSubscriptionIsEnrolled(false);
+          return;
+        }
+
+        setSubscriptionIsEnrolled(Boolean(data));
+        setSubscriptionStatus("loaded");
+      })
+      .catch(() => {
+        setSubscriptionStatus("error");
+        setSubscriptionIsEnrolled(false);
+      });
+  }, [showSubscriptionPanel, user]);
 
   useEffect(() => {
     let isMounted = true;
@@ -410,7 +530,7 @@ export default function Home() {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     let isMounted = true;
@@ -454,10 +574,12 @@ export default function Home() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [userEmail]);
 
   const isAuthenticated = Boolean(user);
   const isAdmin = user?.email === ADMIN_EMAIL;
+  const userEmail = user?.email ?? null;
+  const userId = user?.id ?? null;
 
   const handleGoogleSignIn = useCallback(async () => {
     if (typeof window === "undefined") {
@@ -513,6 +635,10 @@ export default function Home() {
 
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem("authAction");
+      if (userEmail) {
+        const key = `${PROFILE_STORAGE_PREFIX}${userEmail}`;
+        window.localStorage.removeItem(key);
+      }
     }
 
     setUser(null);
@@ -521,7 +647,17 @@ export default function Home() {
     setShowProfilePanel(false);
     setProfileData(DEFAULT_PROFILE_DATA);
     setShowToolsPanel(false);
-  }, []);
+    setShowSubscriptionPanel(false);
+    setSubscriptionStatus("idle");
+    setSubscriptionSuccessMessage(null);
+    setSubscriptionErrorMessage(null);
+    setSubscriptionSubmitting(false);
+    setSubscriptionIsEnrolled(false);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(UPLOAD_FORM_STORAGE_KEY);
+      window.sessionStorage.removeItem(UPLOAD_MODAL_FLAG_KEY);
+    }
+  }, [userEmail]);
 
   const handleUploadClick = useCallback(() => {
     if (isAuthenticated && user) {
@@ -603,9 +739,72 @@ export default function Home() {
           details.collaborationInterest === "N"
             ? details.collaborationInterest
             : "",
+        subscriptionInterest:
+          details.subscriptionInterest === "Y" ||
+          details.subscriptionInterest === "N"
+            ? details.subscriptionInterest
+            : "",
       }));
     },
     []
+  );
+
+  const handlePersistProfileDetails = useCallback(
+    async (
+      details: ProfileDetailsInput
+    ): Promise<{ success: boolean; error?: string }> => {
+      if (!userEmail) {
+        return {
+          success: false,
+          error: "Please sign in to save your profile.",
+        };
+      }
+
+      try {
+        const trimmedFullName = details.fullName.trim();
+        const { error } = await supabase
+          .from("profile_preferences")
+          .upsert(
+            {
+              user_id: userId,
+              user_email: userEmail,
+              full_name: trimmedFullName || null,
+              interests:
+                details.interests && details.interests.trim().length > 0
+                  ? details.interests.trim()
+                  : null,
+              desired_media:
+                details.desiredMedia && details.desiredMedia.trim().length > 0
+                  ? details.desiredMedia.trim()
+                  : null,
+              monetization_interest:
+                details.collaborationInterest === "Y" || details.collaborationInterest === "N"
+                  ? details.collaborationInterest
+                  : null,
+              subscription_interest:
+                details.subscriptionInterest === "Y" || details.subscriptionInterest === "N"
+                  ? details.subscriptionInterest
+                  : null,
+            },
+            { onConflict: "user_email" }
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        return { success: true };
+      } catch (unknownError) {
+        return {
+          success: false,
+          error:
+            unknownError instanceof Error
+              ? unknownError.message
+              : "Unable to save your profile right now.",
+        };
+      }
+    },
+    [userEmail, userId]
   );
 
   const handleFullNameChange = useCallback((nextName: string) => {
@@ -615,31 +814,36 @@ export default function Home() {
     }));
   }, []);
 
-  const handleAddFeedback = useCallback((feedbackText: string) => {
-    const trimmed = feedbackText.trim();
+  const handleAddFeedback = useCallback(
+    (feedbackText: string) => {
+      const trimmed = feedbackText.trim();
 
-    if (!trimmed) {
-      return;
-    }
-
-    setProfileData((previous) => {
-      if (previous.feedback.length >= 5) {
-        return previous;
+      if (!trimmed || !userEmail) {
+        return;
       }
 
-      return {
-        ...previous,
-        feedback: [createFeedbackEntry(trimmed), ...previous.feedback],
-      };
-    });
-  }, []);
+      void supabase
+        .from("profile_feedback")
+        .insert({
+          user_email: userEmail,
+          user_id: userId,
+          message: trimmed,
+        })
+        .catch(() => undefined);
 
-  const handleRemoveFeedback = useCallback((feedbackId: string) => {
-    setProfileData((previous) => ({
-      ...previous,
-      feedback: previous.feedback.filter((entry) => entry.id !== feedbackId),
-    }));
-  }, []);
+      setProfileData((previous) => {
+        if (previous.feedback.length >= 5) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          feedback: [createFeedbackEntry(trimmed), ...previous.feedback],
+        };
+      });
+    },
+    [userEmail, userId]
+  );
 
   const handleUploadSubmit = useCallback(
     async (
@@ -752,6 +956,10 @@ export default function Home() {
 
         setUploadedVideos((previousVideos) => [mapped, ...previousVideos]);
         setShowUploadForm(false);
+        if (typeof window !== "undefined") {
+          window.sessionStorage.removeItem(UPLOAD_FORM_STORAGE_KEY);
+          window.sessionStorage.setItem(UPLOAD_MODAL_FLAG_KEY, "closed");
+        }
 
         return { success: true };
       } catch (unknownError) {
@@ -964,6 +1172,55 @@ export default function Home() {
     []
   );
 
+  const handleJoinSubscriptionWaitlist = useCallback(async () => {
+    if (!user) {
+      setSubscriptionErrorMessage("Sign in to join the waitlist.");
+      setSubscriptionSuccessMessage(null);
+      return;
+    }
+
+    setSubscriptionSubmitting(true);
+    setSubscriptionErrorMessage(null);
+    setSubscriptionSuccessMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from("subscription_waitlist")
+        .upsert(
+          {
+            user_email: user.email,
+            user_id: user.id,
+          },
+          { onConflict: "user_email" }
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      setSubscriptionIsEnrolled(true);
+      setSubscriptionSuccessMessage("Thank you, we have you down!");
+      setSubscriptionStatus("loaded");
+    } catch (unknownError) {
+      setSubscriptionErrorMessage(
+        unknownError instanceof Error
+          ? unknownError.message
+          : "We couldn't add you to the waitlist right now. Please try again."
+      );
+      setSubscriptionStatus("error");
+    } finally {
+      setSubscriptionSubmitting(false);
+    }
+  }, [user]);
+
+  const handleCloseSubscriptionPanel = useCallback(() => {
+    setShowSubscriptionPanel(false);
+    setSubscriptionStatus("idle");
+    setSubscriptionSuccessMessage(null);
+    setSubscriptionErrorMessage(null);
+    setSubscriptionSubmitting(false);
+  }, []);
+
   const allVideos = useMemo(
     () => [...uploadedVideos, ...seedVideos],
     [uploadedVideos, seedVideos]
@@ -1060,14 +1317,26 @@ export default function Home() {
       ) : null}
       <header className="flex flex-col gap-8 px-10 py-10 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-xl">
-          <div className="relative inline-flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setShowAboutDialog(true)}
-              className="mt-2 inline-flex items-center text-xs uppercase tracking-[0.6em] text-white transition hover:text-blue-200"
-            >
-              Eagle AI Pictures
-            </button>
+          <button
+            type="button"
+            onClick={() => setShowAboutDialog(true)}
+            className="mt-2 inline-flex items-center text-xs uppercase tracking-[0.6em] text-white transition hover:text-blue-200"
+          >
+            Eagle AI Pictures
+          </button>
+          <h1
+            className="mt-3 whitespace-nowrap text-4xl font-semibold tracking-wide text-white sm:text-5xl"
+            aria-live="polite"
+          >
+            {rotatingLabel}
+          </h1>
+          <p className="mt-3 text-sm text-white">
+            Highlighting the work of AI creators in one place.
+          </p>
+        </div>
+
+        <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-4">
+          <div className="relative" ref={toolsMenuRef}>
             <button
               type="button"
               ref={toolsButtonRef}
@@ -1087,10 +1356,7 @@ export default function Home() {
               />
             </button>
             {showToolsPanel ? (
-              <div
-                ref={toolsMenuRef}
-                className="absolute left-full top-1/2 z-30 ml-4 w-64 -translate-y-1/2 rounded-2xl border border-white/10 bg-black/90 p-4 text-sm text-white shadow-2xl backdrop-blur"
-              >
+              <div className="absolute right-0 top-14 w-64 rounded-2xl border border-white/10 bg-black/90 p-4 text-sm text-white shadow-2xl backdrop-blur">
                 <h3 className="text-base font-semibold text-white">
                   Great AI tools we like
                 </h3>
@@ -1103,18 +1369,6 @@ export default function Home() {
               </div>
             ) : null}
           </div>
-          <h1
-            className="mt-3 whitespace-nowrap text-4xl font-semibold tracking-wide text-white sm:text-5xl"
-            aria-live="polite"
-          >
-            {rotatingLabel}
-          </h1>
-          <p className="mt-3 text-sm text-white">
-            Highlighting the work of AI creators in one place.
-          </p>
-        </div>
-
-        <div className="flex flex-col items-center gap-3 sm:items-end">
           <div
             className="relative"
             ref={isAuthenticated ? profileMenuRef : undefined}
@@ -1147,7 +1401,9 @@ export default function Home() {
                       type="button"
                       onClick={() => {
                         setProfileMenuOpen(false);
-                        router.push("/subscription");
+                        setShowSubscriptionPanel(true);
+                        setSubscriptionSuccessMessage(null);
+                        setSubscriptionErrorMessage(null);
                       }}
                       className="mt-1 flex w-full items-center rounded-xl px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10"
                     >
@@ -1290,15 +1546,29 @@ export default function Home() {
             interests: profileData.interests,
             desiredMedia: profileData.desiredMedia,
             collaborationInterest: profileData.collaborationInterest,
+            subscriptionInterest: profileData.subscriptionInterest,
           }}
           feedback={profileData.feedback}
           onSaveProfile={handleSaveProfileDetails}
           onFullNameChange={handleFullNameChange}
           onAddFeedback={handleAddFeedback}
-          onRemoveFeedback={handleRemoveFeedback}
+          onPersistProfile={handlePersistProfileDetails}
           videos={myUploads}
           onUpdateVideo={handleUpdateVideoDetails}
           onDeleteVideo={handleDeleteVideo}
+        />
+      ) : null}
+
+      {showSubscriptionPanel && user ? (
+        <SubscriptionPanel
+          user={user}
+          onClose={handleCloseSubscriptionPanel}
+          status={subscriptionStatus}
+          isEnrolled={subscriptionIsEnrolled}
+          isSubmitting={subscriptionSubmitting}
+          successMessage={subscriptionSuccessMessage}
+          errorMessage={subscriptionErrorMessage}
+          onJoin={handleJoinSubscriptionWaitlist}
         />
       ) : null}
 
@@ -1349,6 +1619,7 @@ function mapSupabaseUser(authUser: SupabaseAuthUser): User | null {
 
   if (cleanedName) {
     return {
+      id: authUser.id,
       email,
       name: cleanedName,
       createdAt: authUser.created_at ?? new Date().toISOString(),
@@ -1363,6 +1634,7 @@ function mapSupabaseUser(authUser: SupabaseAuthUser): User | null {
     .join(" ");
 
   return {
+    id: authUser.id,
     email,
     name: formattedHandle
       ? toTitleCase(formattedHandle)
@@ -1411,6 +1683,78 @@ function UploadModal({
   const hasVideoFile = Boolean(formState.videoFile);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const linkInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const storedValue = window.sessionStorage.getItem(UPLOAD_FORM_STORAGE_KEY);
+
+      if (storedValue) {
+        const parsed = JSON.parse(storedValue) as Partial<UploadPayload> & {
+          hasAgreed?: boolean;
+        };
+        const storedCategories = Array.isArray(parsed.categories)
+          ? parsed.categories
+              .filter((category): category is string =>
+                typeof category === "string" && categories.includes(category)
+              )
+              .slice(0, 3)
+          : [];
+
+        setFormState((previous) => ({
+          ...previous,
+          title: parsed.title ?? previous.title,
+          description: parsed.description ?? previous.description,
+          videoLink: parsed.videoLink ?? previous.videoLink,
+          categories:
+            storedCategories.length > 0 ? storedCategories : previous.categories,
+          fullName: parsed.fullName ?? previous.fullName,
+        }));
+
+        if (typeof parsed.hasAgreed === "boolean") {
+          setHasAgreed(parsed.hasAgreed);
+        }
+      }
+    } catch {
+      // Ignore malformed storage payloads
+    }
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const payload = {
+      title: formState.title,
+      description: formState.description,
+      videoLink: formState.videoLink,
+      categories: formState.categories,
+      fullName: formState.fullName,
+      hasAgreed,
+    };
+
+    try {
+      window.sessionStorage.setItem(
+        UPLOAD_FORM_STORAGE_KEY,
+        JSON.stringify(payload)
+      );
+    } catch {
+      // Ignore storage errors
+    }
+  }, [
+    formState.title,
+    formState.description,
+    formState.videoLink,
+    formState.categories,
+    formState.fullName,
+    hasAgreed,
+  ]);
 
   useEffect(() => {
     setFormState((previous) => ({
@@ -1479,6 +1823,10 @@ function UploadModal({
     setHasAgreed(false);
     setError(null);
     setIsSubmitting(false);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(UPLOAD_FORM_STORAGE_KEY);
+      window.sessionStorage.setItem(UPLOAD_MODAL_FLAG_KEY, "closed");
+    }
     onClose();
   };
 
@@ -1535,6 +1883,10 @@ function UploadModal({
         fullName: profileFullName || user.name,
       });
       setHasAgreed(false);
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(UPLOAD_FORM_STORAGE_KEY);
+        window.sessionStorage.setItem(UPLOAD_MODAL_FLAG_KEY, "closed");
+      }
     } catch {
       setError("Something went wrong while sharing your video. Please try again.");
     } finally {
@@ -1617,7 +1969,7 @@ function UploadModal({
                     description: event.target.value,
                   }))
                 }
-                placeholder="Share how you created it"
+                placeholder="Share more about the story! What tools did you use? Where is the music from?"
                 className="min-h-[96px] resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-blue-500"
               />
             </label>
@@ -1675,6 +2027,9 @@ function UploadModal({
               />
               <span className="text-xs text-white">
                 Uploads are disabled when a video link is provided.
+              </span>
+              <span className="text-xs text-white/70">
+                Files are not saved if you navigate away—reselect your video when you return.
               </span>
             </label>
           </div>
@@ -1744,7 +2099,9 @@ type ProfilePanelProps = {
   onSaveProfile: (details: ProfileDetailsInput) => void;
   onFullNameChange: (fullName: string) => void;
   onAddFeedback: (text: string) => void;
-  onRemoveFeedback: (id: string) => void;
+  onPersistProfile: (
+    details: ProfileDetailsInput
+  ) => Promise<{ success: boolean; error?: string }>;
   videos: Video[];
   onUpdateVideo: (
     video: Video,
@@ -1761,7 +2118,7 @@ function ProfilePanel({
   onSaveProfile,
   onFullNameChange,
   onAddFeedback,
-  onRemoveFeedback,
+  onPersistProfile,
   videos,
   onUpdateVideo,
   onDeleteVideo,
@@ -1771,10 +2128,14 @@ function ProfilePanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState("");
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [currentUploadIndex, setCurrentUploadIndex] = useState(0);
 
   useEffect(() => {
     setDraft({ ...profileDetails });
+    setFeedbackSuccess(null);
+    setIsProfileSaving(false);
   }, [profileDetails]);
 
   useEffect(() => {
@@ -1788,34 +2149,54 @@ function ProfilePanel({
     );
   }, [videos.length]);
 
-  const handleProfileSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setStatusMessage(null);
     const trimmedFullName = draft.fullName.trim();
 
     if (!trimmedFullName) {
       setErrorMessage("Add your full name before saving.");
-      setStatusMessage(null);
       return;
     }
 
-    const normalizedInterest =
+    const normalizedMonetize =
       draft.collaborationInterest === "Y" || draft.collaborationInterest === "N"
         ? draft.collaborationInterest
         : "";
+    const normalizedSubscription =
+      draft.subscriptionInterest === "Y" || draft.subscriptionInterest === "N"
+        ? draft.subscriptionInterest
+        : "";
 
-    onSaveProfile({
+    const payload: ProfileDetailsInput = {
       fullName: trimmedFullName,
       interests: draft.interests,
       desiredMedia: draft.desiredMedia,
-      collaborationInterest: normalizedInterest,
-    });
+      collaborationInterest: normalizedMonetize,
+      subscriptionInterest: normalizedSubscription,
+    };
+
+    onSaveProfile(payload);
     onFullNameChange(trimmedFullName);
+    setIsProfileSaving(true);
     setErrorMessage(null);
+
+    const result = await onPersistProfile(payload);
+
+    if (!result.success) {
+      setErrorMessage(result.error ?? "Unable to save your profile right now.");
+      setStatusMessage(null);
+      setIsProfileSaving(false);
+      return;
+    }
+
     setStatusMessage("Profile saved.");
+    setIsProfileSaving(false);
   };
 
   const handleFeedbackSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setFeedbackSuccess(null);
     const trimmed = feedbackDraft.trim();
 
     if (!trimmed) {
@@ -1831,6 +2212,7 @@ function ProfilePanel({
     onAddFeedback(trimmed);
     setFeedbackDraft("");
     setFeedbackError(null);
+    setFeedbackSuccess("Thanks for sharing your thoughts with us!");
   };
 
   const hasUploads = videos.length > 0;
@@ -1907,6 +2289,7 @@ function ProfilePanel({
                     interests: nextValue,
                   }));
                   setStatusMessage(null);
+                  setErrorMessage(null);
                 }}
                 placeholder="Share the topics, tools, or collaborations that inspire you."
                 className="min-h-[96px] resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
@@ -1924,34 +2307,61 @@ function ProfilePanel({
                     desiredMedia: nextValue,
                   }));
                   setStatusMessage(null);
+                  setErrorMessage(null);
                 }}
                 placeholder="Let us know which shows, films, or experiences you want."
                 className="min-h-[96px] resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
               />
             </label>
 
-            <label className="flex flex-col gap-2 text-sm text-white max-w-xs">
-              Are you interested in monetizing your content with Eagle AI Pictures? (Y/N)
-              <select
-                value={draft.collaborationInterest}
-                onChange={(event) => {
-                  const nextValue =
-                    event.target.value === "Y" || event.target.value === "N"
-                      ? (event.target.value as "Y" | "N")
-                      : "";
+            <div className="grid grid-cols-1 gap-6 md:col-span-2 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm text-white">
+                Are you interested in monetizing your content with Eagle AI Pictures? (Y/N)
+                <select
+                  value={draft.collaborationInterest}
+                  onChange={(event) => {
+                    const nextValue =
+                      event.target.value === "Y" || event.target.value === "N"
+                        ? (event.target.value as "Y" | "N")
+                        : "";
                   setDraft((previous) => ({
                     ...previous,
                     collaborationInterest: nextValue,
                   }));
                   setStatusMessage(null);
+                  setErrorMessage(null);
                 }}
                 className="rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
               >
-                <option value="">Select</option>
-                <option value="Y">Y</option>
-                <option value="N">N</option>
-              </select>
-            </label>
+                  <option value="">Select</option>
+                  <option value="Y">Y</option>
+                  <option value="N">N</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-white">
+                Are you interested in a small monthly subscription for premium content, where you can cancel anytime? (Y/N)
+                <select
+                  value={draft.subscriptionInterest}
+                  onChange={(event) => {
+                    const nextValue =
+                      event.target.value === "Y" || event.target.value === "N"
+                        ? (event.target.value as "Y" | "N")
+                        : "";
+                  setDraft((previous) => ({
+                    ...previous,
+                    subscriptionInterest: nextValue,
+                  }));
+                  setStatusMessage(null);
+                  setErrorMessage(null);
+                }}
+                  className="rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+                >
+                  <option value="">Select</option>
+                  <option value="Y">Y</option>
+                  <option value="N">N</option>
+                </select>
+              </label>
+            </div>
 
             <div className="flex items-center justify-end gap-4 md:col-span-2">
               {errorMessage ? (
@@ -1964,10 +2374,11 @@ function ProfilePanel({
               ) : null}
               <button
                 type="submit"
-                className="rounded-full bg-blue-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-400"
+                className="rounded-full bg-blue-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-blue-500"
+                disabled={isProfileSaving}
               >
-                Save profile
-              </button>
+              {isProfileSaving ? "Saving..." : "Save profile"}
+            </button>
             </div>
           </form>
         </section>
@@ -1982,6 +2393,7 @@ function ProfilePanel({
               onChange={(event) => {
                 setFeedbackDraft(event.target.value);
                 setFeedbackError(null);
+                setFeedbackSuccess(null);
               }}
               placeholder="Share ideas, requests, or observations for the Eagle AI Pictures team."
               className="min-h-[120px] w-full resize-y rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
@@ -2000,30 +2412,15 @@ function ProfilePanel({
               </button>
             </div>
           </form>
-          <div className="mt-6 space-y-4">
-            {feedback.length === 0 ? (
-              <p className="text-sm text-white">
-                No feedback submissions yet. Share a note to help us improve.
-              </p>
+          <div className="mt-6">
+            {feedbackSuccess ? (
+              <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                {feedbackSuccess}
+              </div>
             ) : (
-              feedback.map((entry) => (
-                <article
-                  key={entry.id}
-                  className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 text-sm text-white"
-                >
-                  <p>{entry.text}</p>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-white">
-                    <span>{new Date(entry.createdAt).toLocaleString()}</span>
-                    <button
-                      type="button"
-                      onClick={() => onRemoveFeedback(entry.id)}
-                      className="rounded-full border border-white/20 px-4 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </article>
-              ))
+              <p className="text-sm text-white">
+                We read every note. Thanks for helping us improve Eagle AI Pictures.
+              </p>
             )}
           </div>
         </section>
@@ -2083,6 +2480,99 @@ function ProfilePanel({
   );
 }
 
+function SubscriptionPanel({
+  user,
+  onClose,
+  status,
+  isEnrolled,
+  isSubmitting,
+  successMessage,
+  errorMessage,
+  onJoin,
+}: SubscriptionPanelProps) {
+  const createdDateDisplay = useMemo(
+    () => new Date(user.createdAt).toLocaleDateString(),
+    [user.createdAt]
+  );
+
+  const alreadyJoinedMessage =
+    isEnrolled && !successMessage
+      ? "You're already on the premium waitlist."
+      : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-white/10 bg-black px-8 py-10 text-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h2 className="text-2xl font-semibold text-white">Subscription</h2>
+            <p className="mt-2 text-sm text-white/80">
+              You are currently enjoying our free tier as of {createdDateDisplay}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-white/10 px-3 py-1 text-sm text-white transition hover:border-white hover:bg-white/10"
+            aria-label="Close subscription window"
+          >
+            ✕
+          </button>
+        </div>
+
+        <section className="mt-8 space-y-4 text-sm leading-relaxed text-white">
+          <p>
+            Do you want to become a premium subscriber for <span className="font-semibold">$4.99</span> a
+            month and access the site&apos;s best original content? Cancel anytime.
+          </p>
+          <p>Join our waitlist by clicking below!</p>
+        </section>
+
+        {status === "loading" ? (
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white/80">
+            Checking your subscription status...
+          </div>
+        ) : null}
+
+        {successMessage ? (
+          <div className="mt-8 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            {successMessage}
+          </div>
+        ) : alreadyJoinedMessage ? (
+          <div className="mt-8 rounded-2xl border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-sm text-blue-200">
+            {alreadyJoinedMessage}
+          </div>
+        ) : null}
+
+        {errorMessage || status === "error" ? (
+          <div className="mt-8 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {errorMessage ?? "We couldn’t load your subscription details. Please try again."}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={onJoin}
+          className="mt-8 inline-flex items-center rounded-full bg-blue-500 px-8 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-blue-500"
+          disabled={isSubmitting || isEnrolled}
+        >
+          {isEnrolled
+            ? "You're on the Waitlist"
+            : isSubmitting
+            ? "Submitting…"
+            : "Join the Premium Waitlist"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type ProfileUploadEditorProps = {
   video: Video;
   categories: readonly string[];
@@ -2090,6 +2580,17 @@ type ProfileUploadEditorProps = {
     updates: ProfileVideoUpdate
   ) => Promise<{ success: boolean; error?: string }>;
   onDeleteVideo: () => Promise<{ success: boolean; error?: string }>;
+};
+
+type SubscriptionPanelProps = {
+  user: User;
+  onClose: () => void;
+  status: "idle" | "loading" | "loaded" | "error";
+  isEnrolled: boolean;
+  isSubmitting: boolean;
+  successMessage: string | null;
+  errorMessage: string | null;
+  onJoin: () => void;
 };
 
 function ProfileUploadEditor({
@@ -2479,7 +2980,8 @@ function ProfileUploadEditor({
               </div>
               <p className="text-xs text-white/60">
                 Adding a link replaces any uploaded file. Uploading a new file will
-                overwrite your current media.
+                overwrite your current media. Files must be reselected if you leave
+                this page before saving.
               </p>
             </div>
           ) : null}
@@ -2513,6 +3015,7 @@ function VideoCard({
 }) {
   const displayTitle = video.title ?? "Untitled Upload";
   const displayName = video.fullName ?? toTitleCase(video.uploader.name);
+  const views = video.viewCount ?? 0;
 
   return (
     <article
@@ -2570,6 +3073,9 @@ function VideoCard({
           </span>
         ) : null}
         <h3 className="mt-3 text-lg font-medium">{displayTitle}</h3>
+        <p className="mt-1 text-xs text-white/70">
+          {new Intl.NumberFormat("en-US").format(Math.max(0, views))} {views === 1 ? "view" : "views"}
+        </p>
         <p className="mt-2 text-xs uppercase tracking-[0.3em] text-white">
           {displayName}
         </p>
@@ -2684,14 +3190,14 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="text-xl font-semibold tracking-wide">About Us</h3>
-        <p className="mt-4 text-sm text-white">
+        <p className="mt-4 text-base text-white">
           Welcome to the picture! We&apos;re a place for creators and enjoyers, using AI
           to inspire and tell stories.
         </p>
-        <p className="mt-4 text-sm italic text-white">
+        <p className="mt-4 text-base italic text-white">
           “Make things that move people.”
         </p>
-        <p className="mt-4 text-sm text-white">
+        <p className="mt-4 text-lg font-semibold text-white">
           —{" "}
           <a
             href="https://www.linkedin.com/in/andrewjbilden/"
@@ -2702,13 +3208,6 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
             Andrew J. Bilden
           </a>
         </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-8 inline-flex items-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/10"
-        >
-          Close
-        </button>
       </div>
     </div>
   );

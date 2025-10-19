@@ -33,6 +33,20 @@ export default function VideoDetailPage() {
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [moreByCreator, setMoreByCreator] = useState<StoredVideo[]>([]);
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasRecordedViewRef = useRef(false);
+  const viewFormatterRef = useRef(
+    typeof window === "undefined"
+      ? undefined
+      : new Intl.NumberFormat("en-US")
+  );
+  const formattedViewCount = useMemo(() => {
+    const formatter = viewFormatterRef.current;
+    const safeCount = video?.viewCount ?? 0;
+    if (formatter) {
+      return formatter.format(safeCount);
+    }
+    return `${safeCount}`;
+  }, [video?.viewCount]);
 
   useEffect(() => {
     return () => {
@@ -125,6 +139,46 @@ export default function VideoDetailPage() {
     } catch {
       window.prompt("Copy this link and share it:", shareUrl);
     }
+  }, [video]);
+
+  useEffect(() => {
+    if (!video || hasRecordedViewRef.current) {
+      return;
+    }
+
+    const isSeedVideo = Boolean(
+      INITIAL_VIDEOS.find((item) => item.id === video.id)
+    );
+
+    if (isSeedVideo) {
+      hasRecordedViewRef.current = true;
+      return;
+    }
+
+    hasRecordedViewRef.current = true;
+
+    const incrementView = async () => {
+      const { data, error } = await supabase.rpc(
+        "increment_video_view_count",
+        { target_id: video.id }
+      );
+
+      if (!error) {
+        const nextCount = typeof data === "number" ? data : video.viewCount + 1;
+        setVideo((previous) =>
+          previous ? { ...previous, viewCount: nextCount } : previous
+        );
+        return;
+      }
+
+      setVideo((previous) =>
+        previous
+          ? { ...previous, viewCount: previous.viewCount + 1 }
+          : previous
+      );
+    };
+
+    void incrementView();
   }, [video]);
 
   useEffect(() => {
@@ -273,6 +327,9 @@ export default function VideoDetailPage() {
           {video.uploader.email ? (
             <p className="text-xs text-white">{video.uploader.email}</p>
           ) : null}
+          <p className="mt-2 text-sm text-white/70">
+            {formattedViewCount} {video.viewCount === 1 ? "view" : "views"}
+          </p>
         </div>
         <button
           type="button"
@@ -288,6 +345,16 @@ export default function VideoDetailPage() {
           <VideoPlayer video={video} />
         </div>
         <aside className="space-y-6 rounded-3xl border border-white/10 bg-white/[0.05] p-8 backdrop-blur">
+          <div>
+            <p className="text-xs uppercase tracking-[0.4em] text-white">
+              Description
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-white">
+              {video.description && video.description.trim().length > 0
+                ? video.description
+                : "The creator hasn’t shared details about this piece yet."}
+            </p>
+          </div>
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-white">
               Categories
@@ -317,16 +384,6 @@ export default function VideoDetailPage() {
               {new Date(video.createdAt).toLocaleString()}
             </p>
           </div>
-          {video.description ? (
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-white">
-                Description
-              </p>
-              <p className="mt-3 text-sm leading-relaxed text-white">
-                {video.description}
-              </p>
-            </div>
-          ) : null}
         </aside>
       </main>
       {moreByCreator.length > 0 ? (
@@ -387,6 +444,7 @@ function RelatedVideoCard({
 }) {
   const displayTitle = video.title ?? "Untitled Upload";
   const displayName = video.fullName ?? toTitleCase(video.uploader.name);
+  const views = video.viewCount ?? 0;
 
   return (
     <article
@@ -400,6 +458,9 @@ function RelatedVideoCard({
         <h3 className="text-base font-semibold text-white group-hover:text-blue-200">
           {displayTitle}
         </h3>
+        <p className="mt-1 text-xs text-white/70">
+          {new Intl.NumberFormat("en-US").format(views)} {views === 1 ? "view" : "views"}
+        </p>
         <p className="mt-2 text-xs uppercase tracking-[0.3em] text-white">
           {displayName}
         </p>

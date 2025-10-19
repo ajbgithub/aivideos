@@ -198,3 +198,112 @@ create policy "Users update their waitlist entry"
     auth.email() = user_email
     and (user_id is null or auth.uid() = user_id)
   );
+
+-- Profile preferences table
+create table if not exists public.profile_preferences (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid,
+  user_email text not null unique,
+  full_name text,
+  interests text,
+  desired_media text,
+  monetization_interest text check (monetization_interest in ('Y', 'N')),
+  subscription_interest text check (subscription_interest in ('Y', 'N')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.set_profile_preferences_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists set_profile_preferences_updated_at on public.profile_preferences;
+
+create trigger set_profile_preferences_updated_at
+before update on public.profile_preferences
+for each row
+execute function public.set_profile_preferences_updated_at();
+
+alter table public.profile_preferences enable row level security;
+
+drop policy if exists "Users read their profile preferences" on public.profile_preferences;
+create policy "Users read their profile preferences"
+  on public.profile_preferences
+  for select
+  using (auth.email() = user_email);
+
+drop policy if exists "Users create profile preferences" on public.profile_preferences;
+create policy "Users create profile preferences"
+  on public.profile_preferences
+  for insert
+  with check (
+    auth.email() = user_email
+    and (user_id is null or auth.uid() = user_id)
+  );
+
+drop policy if exists "Users update profile preferences" on public.profile_preferences;
+create policy "Users update profile preferences"
+  on public.profile_preferences
+  for update
+  using (auth.email() = user_email)
+  with check (
+    auth.email() = user_email
+    and (user_id is null or auth.uid() = user_id)
+  );
+
+-- Profile feedback table
+create table if not exists public.profile_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid,
+  user_email text not null,
+  message text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.profile_feedback enable row level security;
+
+drop policy if exists "Users submit profile feedback" on public.profile_feedback;
+create policy "Users submit profile feedback"
+  on public.profile_feedback
+  for insert
+  with check (
+    auth.email() = user_email
+    and (user_id is null or auth.uid() = user_id)
+  );
+
+drop policy if exists "Users remove their profile feedback" on public.profile_feedback;
+create policy "Users remove their profile feedback"
+  on public.profile_feedback
+  for delete
+  using (auth.email() = user_email);
+
+-- View count increment function
+create or replace function public.increment_video_view_count(target_id uuid)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_count bigint;
+begin
+  update public.videos
+  set view_count = view_count + 1
+  where id = target_id
+  returning view_count into new_count;
+
+  if new_count is null then
+    select view_count into new_count from public.videos where id = target_id;
+  end if;
+
+  return coalesce(new_count, 0);
+end;
+$$;
+
+grant execute on function public.increment_video_view_count(uuid) to anon, authenticated;
