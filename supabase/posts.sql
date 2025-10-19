@@ -14,6 +14,7 @@ create table if not exists public.videos (
       'tiktok',
       'spotify',
       'apple-podcasts',
+      'sora2',
       'x',
       'external'
     )

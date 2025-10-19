@@ -6,6 +6,7 @@ export type VideoSource =
   | "spotify"
   | "apple-podcasts"
   | "x"
+  | "sora2"
   | "external";
 
 export type TopRatedOverride = "feature" | "suppress";

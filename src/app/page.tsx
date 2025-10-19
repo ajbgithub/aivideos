@@ -78,6 +78,7 @@ const DEFAULT_PROFILE_DATA: ProfileData = {
   feedback: [],
 };
 const ROTATING_LABELS = [
+  "Creatives and Audiences",
   "AI Videos",
   "AI Films",
   "AI Podcasts",
@@ -3578,7 +3579,7 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
       const resourceType = segments[0];
       const resourceId = segments[1];
       if (resourceType && resourceId) {
-        const embedTypeMap: Record<string, string> = {
+          const embedTypeMap: Record<string, string> = {
           episode: "episode",
           show: "show",
           playlist: "playlist",
@@ -3614,6 +3615,18 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
         return {
           url: `https://platform.twitter.com/embed/Tweet.html?id=${tweetId}`,
           source: "x",
+        };
+      }
+    }
+
+    if (host.includes("sora.chatgpt.com")) {
+      const pathSegments = url.pathname.split("/").filter(Boolean);
+      const clipId = pathSegments[pathSegments.length - 1];
+      if (clipId) {
+        const embedUrl = `https://sora.chatgpt.com/embed/${clipId}`;
+        return {
+          url: embedUrl,
+          source: "sora2",
         };
       }
     }
