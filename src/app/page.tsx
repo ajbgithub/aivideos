@@ -2145,6 +2145,13 @@ function ProfilePanel({
   onUpdateVideo,
   onDeleteVideo,
 }: ProfilePanelProps) {
+  const {
+    fullName: profileFullName,
+    interests: profileInterests,
+    desiredMedia: profileDesiredMedia,
+    collaborationInterest: profileCollaborationInterest,
+    subscriptionInterest: profileSubscriptionInterest,
+  } = profileDetails;
   const [draft, setDraft] = useState<ProfileDetailsInput>({ ...profileDetails });
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -2155,10 +2162,40 @@ function ProfilePanel({
   const [currentUploadIndex, setCurrentUploadIndex] = useState(0);
 
   useEffect(() => {
-    setDraft({ ...profileDetails });
-    setFeedbackSuccess(null);
-    setIsProfileSaving(false);
-  }, [profileDetails]);
+    let didUpdateDraft = false;
+
+    setDraft((previous) => {
+      if (
+        previous.fullName === profileFullName &&
+        previous.interests === profileInterests &&
+        previous.desiredMedia === profileDesiredMedia &&
+        previous.collaborationInterest === profileCollaborationInterest &&
+        previous.subscriptionInterest === profileSubscriptionInterest
+      ) {
+        return previous;
+      }
+
+      didUpdateDraft = true;
+      return {
+        fullName: profileFullName,
+        interests: profileInterests,
+        desiredMedia: profileDesiredMedia,
+        collaborationInterest: profileCollaborationInterest,
+        subscriptionInterest: profileSubscriptionInterest,
+      };
+    });
+
+    if (didUpdateDraft) {
+      setFeedbackSuccess(null);
+      setIsProfileSaving(false);
+    }
+  }, [
+    profileFullName,
+    profileInterests,
+    profileDesiredMedia,
+    profileCollaborationInterest,
+    profileSubscriptionInterest,
+  ]);
 
   useEffect(() => {
     if (videos.length === 0) {
