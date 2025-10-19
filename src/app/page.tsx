@@ -1353,21 +1353,7 @@ export default function Home() {
     setSubscriptionSuccessMessage(null);
     setSubscriptionErrorMessage(null);
     setShowSubscriptionPanel(true);
-
-    if (subscriptionIsEnrolled) {
-      setSubscriptionStatus("loaded");
-      return;
-    }
-
-    if (!subscriptionSubmitting) {
-      void handleJoinSubscriptionWaitlist();
-    }
-  }, [
-    user,
-    subscriptionIsEnrolled,
-    subscriptionSubmitting,
-    handleJoinSubscriptionWaitlist,
-  ]);
+  }, [user]);
 
   const handleCloseSubscriptionPanel = useCallback(() => {
     setShowSubscriptionPanel(false);
@@ -1867,6 +1853,7 @@ function UploadModal({
     fullName: profileFullName || user.name,
   });
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [hasAgreed, setHasAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasVideoLink = Boolean(formState.videoLink.trim());
@@ -2012,6 +1999,7 @@ function UploadModal({
   const handleClose = () => {
     setHasAgreed(false);
     setError(null);
+    setInfoMessage(null);
     setIsSubmitting(false);
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem(UPLOAD_FORM_STORAGE_KEY);
@@ -2052,6 +2040,11 @@ function UploadModal({
 
     setError(null);
     setIsSubmitting(true);
+    setInfoMessage(
+      formState.videoFile
+        ? "Please stay on this page! It will close automatically when your post is ready."
+        : null
+    );
     try {
       const result = await onSubmit({
         ...formState,
@@ -2061,6 +2054,9 @@ function UploadModal({
 
       if (!result.success) {
         setError(result.error ?? "Unable to share video right now.");
+        if (formState.videoFile) {
+          setInfoMessage(null);
+        }
         return;
       }
 
@@ -2073,12 +2069,16 @@ function UploadModal({
         fullName: profileFullName || user.name,
       });
       setHasAgreed(false);
+      setInfoMessage(null);
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem(UPLOAD_FORM_STORAGE_KEY);
         window.sessionStorage.setItem(UPLOAD_MODAL_FLAG_KEY, "closed");
       }
     } catch {
       setError("Something went wrong while sharing your video. Please try again.");
+      if (formState.videoFile) {
+        setInfoMessage(null);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -2237,6 +2237,11 @@ function UploadModal({
           </label>
 
           {error ? <p className="text-sm text-red-400">{error}</p> : null}
+          {infoMessage ? (
+            <p className="rounded-2xl border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-sm text-blue-200">
+              {infoMessage}
+            </p>
+          ) : null}
 
           <p className="text-xs text-white">
             By continuing you agree to our{" "}
