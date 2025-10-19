@@ -725,7 +725,7 @@ export default function Home() {
   const handleShareVideo = useCallback(
     async (video: Video) => {
       if (typeof window === "undefined") {
-        return;
+        return; 
       }
 
       const baseUrl = window.location.origin;
