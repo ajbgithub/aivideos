@@ -17,6 +17,7 @@ import {
 import { ShareIcon } from "@/components/icons/ShareIcon";
 import { mapDatabaseVideo } from "@/lib/mapDatabaseVideo";
 import { supabase } from "@/lib/supabaseClient";
+import Image from "next/image";
 
 type LoadState = "loading" | "loaded" | "not_found" | "error";
 
@@ -444,12 +445,15 @@ function RelatedVideoCard({
       onClick={onOpen}
     >
       <div className="relative aspect-video overflow-hidden bg-black/80">
-        <img
+        <Image
           src={thumbnailSrc}
           alt={`Preview of ${displayTitle}`}
-          className="h-full w-full object-cover"
-          loading="lazy"
+          fill
+          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+          className="object-cover"
           draggable={false}
+          unoptimized
+          loading="lazy"
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 transition group-hover:opacity-100" />
         <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white">

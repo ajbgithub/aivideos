@@ -1446,13 +1446,6 @@ export default function Home() {
     [isAdmin, uploadedVideos]
   );
 
-  const adminButtonClasses =
-    overrideState === "feature"
-      ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
-      : overrideState === "suppress"
-      ? "border-red-500 text-red-300 hover:bg-red-500 hover:text-white"
-      : "border-white/20 text-white hover:border-blue-500 hover:text-white";
-
   return (
     <div className="flex min-h-screen flex-col bg-black text-white">
       {shareNotice ? (
@@ -3218,6 +3211,12 @@ function VideoCard({
       : overrideState === "suppress"
       ? "Clear Top Rated Override"
       : "Feature Top Rated";
+  const adminButtonClasses =
+    overrideState === "feature"
+      ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
+      : overrideState === "suppress"
+      ? "border-red-500 text-red-300 hover:bg-red-500 hover:text-white"
+      : "border-white/20 text-white hover:border-blue-500 hover:text-white";
 
   return (
     <article
