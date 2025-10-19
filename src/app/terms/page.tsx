@@ -39,8 +39,8 @@ export default function TermsOfServicePage() {
           <h2 className="text-lg font-semibold text-white">2. Acceptable Use</h2>
           <p className="mt-3">
             You agree to share original or licensed work, credit collaborators, and
-            respect the rights of others. We remove content that violates law, harms
-            our community, or infringes on third parties.
+            respect the rights of others. We remove content that violates U.S. law, is harmful or in poor taste
+            for our community, or infringes on third parties.
           </p>
         </article>
 
@@ -48,7 +48,7 @@ export default function TermsOfServicePage() {
           <h2 className="text-lg font-semibold text-white">3. Platform Changes</h2>
           <p className="mt-3">
             We may update features, run promotions, or process payments to support
-            creators. These terms evolve with the product and continued use implies
+            the organization and creators. These terms evolve with the product and continued use implies
             acceptance of updates.
           </p>
         </article>

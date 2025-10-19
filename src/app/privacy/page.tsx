@@ -40,14 +40,14 @@ export default function PrivacyPolicyPage() {
           <p className="mt-3">
             We store posts, may highlight creators across our network, and analyze
             aggregated usage to improve the experience. Your uploads remain yours—we
-            do not sell personal data.
+            do not sell personal data. We may invite creators to participate in future premium content offerings with ad, prize, and revenue sharing incentives. 
           </p>
         </article>
 
         <article>
           <h2 className="text-lg font-semibold text-white">3. Your Choices</h2>
           <p className="mt-3">
-            You can request removal of your content or account at any time by
+            You can delete your content via your profile or request removal of your content or account at any time by
             contacting our team. We honor takedown requests for posts you no longer
             want featured on Eagle AI Pictures.
           </p>

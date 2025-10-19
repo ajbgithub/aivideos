@@ -1279,15 +1279,15 @@ export default function Home() {
       return {
         title: "Create your account",
         description:
-          "Create an account with us through Google Sign On to upload videos, access premium features, and curate your feed.",
+          "Sign in with Google (through our host Supabase) to upload videos, access subscriptions, and curate your feed.",
         confirmLabel: "Continue with Google",
       };
     }
 
     return {
-      title: "Upload with Google",
+      title: "Create your account",
       description:
-        "Create an account with us through Google Sign On to upload videos and share your latest work with the community.",
+        " Sign in with Google (through our host Supabase) to upload videos, access subscriptions, and curate your feed.",
       confirmLabel: "Continue with Google",
     };
   }, [authPromptContext]);
@@ -2052,11 +2052,8 @@ function UploadModal({
                 disabled={hasVideoLink}
                 ref={fileInputRef}
               />
-              <span className="text-xs text-white">
-                Uploads are disabled when a video link is provided.
-              </span>
               <span className="text-xs text-white/70">
-                Files are not saved if you navigate away—reselect your video when you return.
+                Files are not saved if you navigate away - please stay on the page while uploading!
               </span>
             </label>
           </div>
@@ -2069,10 +2066,10 @@ function UploadModal({
               className="mt-1 size-4 cursor-pointer rounded border border-white/20 bg-white/[0.02]"
             />
             <span>
-              By uploading to this site, I acknowledge this work as my own, and credit
+              This work is my own, and I have credited
               other artists where appropriate. I acknowledge Eagle AI Pictures may
-              republish and reference my work with its network, but that the organization
-              does not claim ownership or copyright of my work.
+              reference or feature my work across its network for promotional or community purposes. However, the organization
+              does not claim ownership or copyright of my work, and I can delete it at any time. I agree to be contacted regarding potential opportunities for advertising, monetization, or revenue sharing related to my submission.
             </span>
           </label>
 
@@ -2449,7 +2446,7 @@ function ProfilePanel({
 
         <section className="mt-10">
           <h3 className="text-lg font-semibold text-white">
-            Could we ask you to provide us with feedback?
+            Could we ask you to provide us with valuable feedback?
           </h3>
           <form className="mt-4 space-y-4" onSubmit={handleFeedbackSubmit}>
             <textarea
@@ -2483,7 +2480,7 @@ function ProfilePanel({
               </div>
             ) : (
               <p className="text-sm text-white">
-                We read every note. Thanks for helping us improve Eagle AI Pictures.
+                We read every note. Thanks for helping us improve Eagle AI Pictures!
               </p>
             )}
           </div>
@@ -2592,10 +2589,10 @@ function SubscriptionPanel({
 
         <section className="mt-8 space-y-4 text-sm leading-relaxed text-white">
           <p>
-            Do you want to become a premium subscriber for <span className="font-semibold">$4.99</span> a
+            Would you like to become a premium subscriber for <span className="font-semibold">$4.99</span> a
             month and access the site&apos;s best original content? Cancel anytime.
           </p>
-          <p>Join our waitlist by clicking below!</p>
+          <p>Lock in this limited offer and join our waitlist by clicking below!</p>
         </section>
 
         {status === "loading" ? (
@@ -3043,9 +3040,7 @@ function ProfileUploadEditor({
                 </label>
               </div>
               <p className="text-xs text-white/60">
-                Adding a link replaces any uploaded file. Uploading a new file will
-                overwrite your current media. Files must be reselected if you leave
-                this page before saving.
+                Adding a link replaces any uploaded file. Please save your changes before navigating away!
               </p>
             </div>
           ) : null}
@@ -3239,8 +3234,8 @@ function PromptDialog({
           >
             Terms of Service
           </a>
-          . We store post information, may advertise, and process payments in service of
-          creators while never claiming ownership of your work.
+          . We store user content, advertise on the site, and may process payments in service of the organization and
+          creators, while never claiming ownership of your work without prior agreement.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-4 text-sm">
           <button
@@ -3276,11 +3271,10 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
       >
         <h3 className="text-xl font-semibold tracking-wide">About Us</h3>
         <p className="mt-4 text-base text-white">
-          Welcome to the picture! We&apos;re a place for creators and enjoyers, using AI
-          to inspire and tell stories.
+          Welcome to Eagle AI Pictures! We&apos;re a place for creatives and consumers, using AI to tell stories and inspire people.
         </p>
         <p className="mt-4 text-base italic text-white">
-          “Make things that move people.”
+          Make things that move people
         </p>
         <p className="mt-4 text-lg font-semibold text-white">
           —{" "}
