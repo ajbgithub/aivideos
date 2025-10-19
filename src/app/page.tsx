@@ -2574,7 +2574,7 @@ function SubscriptionPanel({
           <div>
             <h2 className="text-2xl font-semibold text-white">Subscription</h2>
             <p className="mt-2 text-sm text-white/80">
-              You are currently enjoying our free tier as of {createdDateDisplay}.
+              You currently enjoy our free tier as of {createdDateDisplay}.
             </p>
           </div>
           <button

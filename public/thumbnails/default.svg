@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="defaultGradient" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#1f2937" />
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#defaultGradient)" />
+  <rect x="40" y="40" width="560" height="280" fill="none" stroke="#60a5fa" stroke-width="4" stroke-dasharray="16 12" opacity="0.4" />
+  <g fill="#f9fafb" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+    <text x="320" y="176" font-size="36" font-weight="600">Eagle AI Pictures</text>
+    <text x="320" y="216" font-size="20" opacity="0.72">Preview coming soon</text>
+  </g>
+</svg>

@@ -192,75 +192,71 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
       related.set(item.id, item);
     };
 
-    const targetEmail = video.uploader.email?.trim();
-    const targetName = (video.fullName ?? toTitleCase(video.uploader.name)).trim();
+    const rawEmail = video.uploader.email.trim();
+    const targetEmail = rawEmail.length > 0 ? rawEmail.toLowerCase() : null;
+    const fallbackName = (video.fullName ?? toTitleCase(video.uploader.name)).trim();
 
-    INITIAL_VIDEOS.forEach((item) => {
-      const itemEmail = item.uploader.email?.trim();
-      const itemName = (item.fullName ?? toTitleCase(item.uploader.name)).trim();
-
-      if (targetEmail && itemEmail) {
-        if (itemEmail === targetEmail) {
+    if (targetEmail) {
+      INITIAL_VIDEOS.forEach((item) => {
+        const seedEmail = item.uploader.email?.trim();
+        if (seedEmail && seedEmail.toLowerCase() === targetEmail) {
           addVideo(item);
         }
+      });
+
+      let isMounted = true;
+
+      const loadRelated = async () => {
+        try {
+          const { data, error } = await supabase
+            .from("videos")
+            .select(
+              "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+            )
+            .eq("uploader_email", rawEmail)
+            .neq("id", video.id)
+            .order("created_at", { ascending: false })
+            .limit(12);
+
+          if (!error && data) {
+            data
+              .map(mapDatabaseVideo)
+              .filter((item): item is StoredVideo => Boolean(item))
+              .forEach(addVideo);
+          }
+        } finally {
+          if (isMounted) {
+            setMoreByCreator(Array.from(related.values()).slice(0, 6));
+          }
+        }
+      };
+
+      void loadRelated();
+
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    if (fallbackName.length === 0) {
+      setMoreByCreator([]);
+      return;
+    }
+
+    INITIAL_VIDEOS.forEach((item) => {
+      const seedEmail = item.uploader.email?.trim();
+      if (seedEmail && seedEmail.length > 0) {
         return;
       }
-
-      if (!targetEmail && !itemEmail && itemName && itemName === targetName) {
+      const seedName = (item.fullName ?? toTitleCase(item.uploader.name)).trim();
+      if (seedName && seedName === fallbackName) {
         addVideo(item);
       }
     });
 
-    let isMounted = true;
-
-    const loadRelated = async () => {
-      try {
-        if (targetEmail) {
-          const { data, error } = await supabase
-            .from("videos")
-            .select(
-              "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
-            )
-            .eq("uploader_email", targetEmail)
-            .neq("id", video.id)
-            .order("created_at", { ascending: false })
-            .limit(12);
-
-          if (!error && data) {
-            data
-              .map(mapDatabaseVideo)
-              .filter((item): item is StoredVideo => Boolean(item))
-              .forEach(addVideo);
-          }
-        } else if (targetName) {
-          const { data, error } = await supabase
-            .from("videos")
-            .select(
-              "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
-            )
-            .eq("full_name", targetName)
-            .neq("id", video.id)
-            .order("created_at", { ascending: false })
-            .limit(12);
-
-          if (!error && data) {
-            data
-              .map(mapDatabaseVideo)
-              .filter((item): item is StoredVideo => Boolean(item))
-              .forEach(addVideo);
-          }
-        }
-      } finally {
-        if (isMounted) {
-          setMoreByCreator(Array.from(related.values()).slice(0, 6));
-        }
-      }
-    };
-
-    loadRelated();
-
+    setMoreByCreator(Array.from(related.values()).slice(0, 6));
     return () => {
-      isMounted = false;
+      /* no async cleanup needed */
     };
   }, [video]);
 
@@ -440,14 +436,25 @@ function RelatedVideoCard({
   const displayTitle = video.title ?? "Untitled Upload";
   const displayName = video.fullName ?? toTitleCase(video.uploader.name);
   const views = video.viewCount ?? 0;
+  const thumbnailSrc = getVideoThumbnail(video);
 
   return (
     <article
       className="group flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] transition hover:border-blue-500"
       onClick={onOpen}
     >
-      <div className="flex aspect-video items-center justify-center bg-black/80 text-white">
-        <span className="text-xs uppercase tracking-[0.4em]">View</span>
+      <div className="relative aspect-video overflow-hidden bg-black/80">
+        <img
+          src={thumbnailSrc}
+          alt={`Preview of ${displayTitle}`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          draggable={false}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 transition group-hover:opacity-100" />
+        <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white">
+          <span>View</span>
+        </div>
       </div>
       <div className="p-5">
         <h3 className="text-base font-semibold text-white group-hover:text-blue-200">
@@ -501,6 +508,33 @@ function VideoPlayer({ video }: { video: StoredVideo }) {
     );
   }
 
+  if (video.source === "spotify") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "Spotify embed"}
+        className="aspect-video w-full"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+        loading="lazy"
+        allowFullScreen
+      />
+    );
+  }
+
+  if (video.source === "apple-podcasts") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "Apple Podcasts embed"}
+        className="aspect-video w-full"
+        allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write"
+        sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
+        loading="lazy"
+        allowFullScreen
+      />
+    );
+  }
+
   return (
     <video
       controls
@@ -522,4 +556,59 @@ function toTitleCase(input: string) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function getVideoThumbnail(video: StoredVideo): string {
+  if (video.source === "youtube") {
+    const videoId = extractYouTubeId(video.url);
+    if (videoId) {
+      return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+    }
+  }
+
+  if (video.source === "spotify") {
+    return "/thumbnails/spotify.svg";
+  }
+
+  if (video.source === "apple-podcasts") {
+    return "/thumbnails/apple-podcasts.svg";
+  }
+
+  if (video.source === "instagram") {
+    return "/thumbnails/instagram.svg";
+  }
+
+  if (video.source === "tiktok") {
+    return "/thumbnails/tiktok.svg";
+  }
+
+  if (video.source === "file") {
+    return "/thumbnails/upload.svg";
+  }
+
+  return "/thumbnails/default.svg";
+}
+
+function extractYouTubeId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const directId = parsed.searchParams.get("v");
+    if (directId) {
+      return directId;
+    }
+
+    const match = parsed.pathname.match(/\/embed\/([^/?]+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+
+    const pathSegments = parsed.pathname.split("/").filter(Boolean);
+    if (pathSegments.length > 0) {
+      return pathSegments[pathSegments.length - 1];
+    }
+  } catch {
+    // ignore parsing errors and fall back to null
+  }
+
+  return null;
 }

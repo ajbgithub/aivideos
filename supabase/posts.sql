@@ -6,8 +6,16 @@ create table if not exists public.videos (
   title text,
   description text,
   video_url text,
-  source text not null check (
-    source in ('file', 'youtube', 'instagram', 'tiktok', 'external')
+  source text not null constraint videos_source_check check (
+    source in (
+      'file',
+      'youtube',
+      'instagram',
+      'tiktok',
+      'spotify',
+      'apple-podcasts',
+      'external'
+    )
   ),
   storage_object_path text,
   storage_bucket_id text not null default 'ai_videos',
@@ -45,6 +53,22 @@ alter table public.videos
 
 alter table public.videos
   add column if not exists updated_at timestamptz not null default now();
+
+alter table public.videos
+  drop constraint if exists videos_source_check;
+
+alter table public.videos
+  add constraint videos_source_check check (
+    source in (
+      'file',
+      'youtube',
+      'instagram',
+      'tiktok',
+      'spotify',
+      'apple-podcasts',
+      'external'
+    )
+  );
 
 alter table public.videos
   drop constraint if exists video_media_present;

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice">
+  <rect width="640" height="360" fill="#0f172a" />
+  <circle cx="320" cy="180" r="128" fill="#1db954" />
+  <g fill="#0f172a">
+    <path d="M257 160c48-18 120-18 176 4 7 3 11 11 8 18-3 7-11 11-18 8-50-19-108-19-156-4-7 2-15-1-17-9-3-7 1-15 8-17z" />
+    <path d="M263 202c41-15 102-15 146 3 6 3 9 10 6 16-3 6-10 9-16 6-39-15-92-15-130-3-6 1-13-2-15-8-2-6 1-13 7-14z" />
+    <path d="M269 240c33-12 84-12 120 2 6 2 9 9 7 14-3 6-9 9-15 7-30-11-70-11-101-2-6 1-12-2-13-8-2-6 2-12 8-13z" />
+  </g>
+  <text x="320" y="326" fill="#d1fae5" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="600" text-anchor="middle">
+    Spotify
+  </text>
+</svg>

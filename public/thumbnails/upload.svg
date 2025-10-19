@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice">
+  <rect width="640" height="360" fill="#111827" />
+  <g transform="translate(188 72)">
+    <rect x="0" y="0" width="264" height="216" rx="24" fill="#1f2937" stroke="#60a5fa" stroke-width="4" stroke-dasharray="14 12" opacity="0.8" />
+    <path d="M132 46l62 72h-40v64h-44v-64H70l62-72z" fill="#60a5fa" opacity="0.95" />
+    <rect x="108" y="182" width="48" height="12" rx="6" fill="#f9fafb" />
+  </g>
+  <text x="320" y="320" fill="#f9fafb" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="600" text-anchor="middle">
+    Uploaded Media
+  </text>
+</svg>

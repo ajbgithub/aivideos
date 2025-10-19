@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="podcastsGradient" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#f5d0ff" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#podcastsGradient)" />
+  <g fill="#fff">
+    <circle cx="320" cy="160" r="110" opacity="0.35" />
+    <circle cx="320" cy="160" r="78" opacity="0.55" />
+    <circle cx="320" cy="160" r="46" opacity="0.85" />
+    <circle cx="320" cy="160" r="18" />
+    <rect x="304" y="178" width="32" height="102" rx="16" />
+  </g>
+  <text x="320" y="320" fill="#f9f5ff" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="600" text-anchor="middle">
+    Apple Podcasts
+  </text>
+</svg>
