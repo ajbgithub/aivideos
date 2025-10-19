@@ -437,7 +437,6 @@ function RelatedVideoCard({
   const displayTitle = video.title ?? "Untitled Upload";
   const displayName = video.fullName ?? toTitleCase(video.uploader.name);
   const views = video.viewCount ?? 0;
-  const thumbnailSrc = getVideoThumbnail(video);
 
   return (
     <article
@@ -445,16 +444,7 @@ function RelatedVideoCard({
       onClick={onOpen}
     >
       <div className="relative aspect-video overflow-hidden bg-black/80">
-        <Image
-          src={thumbnailSrc}
-          alt={`Preview of ${displayTitle}`}
-          fill
-          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-          className="object-cover"
-          draggable={false}
-          unoptimized
-          loading="lazy"
-        />
+        <PreviewMedia video={video} />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 transition group-hover:opacity-100" />
         <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white">
           <span>View</span>
@@ -484,6 +474,103 @@ function RelatedVideoCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function PreviewMedia({ video }: { video: StoredVideo }) {
+  if (video.source === "file") {
+    return (
+      <video
+        className="pointer-events-none h-full w-full object-cover"
+        src={video.url}
+        playsInline
+        muted
+        preload="metadata"
+      />
+    );
+  }
+
+  if (video.source === "youtube") {
+    const thumbnailSrc = getVideoThumbnail(video);
+    return (
+      <Image
+        src={thumbnailSrc}
+        alt={`Preview of ${video.title ?? "Video"}`}
+        fill
+        sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+        className="pointer-events-none object-cover"
+        draggable={false}
+        unoptimized
+        loading="lazy"
+      />
+    );
+  }
+
+  if (video.source === "instagram" || video.source === "tiktok") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "Embedded preview"}
+        className="pointer-events-none h-full w-full"
+        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+        allowFullScreen
+        loading="lazy"
+      />
+    );
+  }
+
+  if (video.source === "spotify") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "Spotify preview"}
+        className="pointer-events-none h-full w-full"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+        allowFullScreen
+        loading="lazy"
+      />
+    );
+  }
+
+  if (video.source === "apple-podcasts") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "Apple Podcasts preview"}
+        className="pointer-events-none h-full w-full"
+        allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write"
+        sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
+        allowFullScreen
+        loading="lazy"
+      />
+    );
+  }
+
+  if (video.source === "x") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "X preview"}
+        className="pointer-events-none h-full w-full"
+        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+        allowFullScreen
+        loading="lazy"
+      />
+    );
+  }
+
+  const thumbnailSrc = getVideoThumbnail(video);
+  return (
+    <Image
+      src={thumbnailSrc}
+      alt={`Preview of ${video.title ?? "Video"}`}
+      fill
+      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+      className="pointer-events-none object-cover"
+      draggable={false}
+      unoptimized
+      loading="lazy"
+    />
   );
 }
 
@@ -559,8 +646,7 @@ function VideoPlayer({ video }: { video: StoredVideo }) {
       preload="metadata"
       className="aspect-video w-full"
       src={video.url}
-      controlsList="nodownload nofullscreen noremoteplayback"
-      disablePictureInPicture
+      controlsList="nodownload"
       onContextMenu={(event) => event.preventDefault()}
       draggable={false}
     />

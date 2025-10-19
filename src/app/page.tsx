@@ -95,22 +95,7 @@ function createFeedbackEntry(text: string): FeedbackEntry {
   };
 }
 
-function getNextTopRatedOverride(
-  current: Video["topRatedOverride"] | null
-): Video["topRatedOverride"] | null {
-  if (current === "feature") {
-    return "suppress";
-  }
-
-  if (current === "suppress") {
-    return null;
-  }
-
-  return "feature";
-}
-
 const initialVideos: Video[] = INITIAL_VIDEOS.map((video) => ({ ...video }));
-const AUTO_TOP_RATED_LIMIT = 6;
 
 const ADMIN_EMAIL = "mbamoveteam@gmail.com";
 
@@ -126,6 +111,7 @@ export default function Home() {
     useState<"upload" | "profile">("upload");
   const [authError, setAuthError] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -724,17 +710,40 @@ export default function Home() {
     }
   }, []);
 
-  const showShareNotice = useCallback((message: string) => {
-    setShareNotice(message);
+  const showShareNotice = useCallback(
+    (
+      message: string,
+      options?: {
+        persist?: boolean;
+        duration?: number;
+      }
+    ) => {
+      setShareNotice(message);
 
+      if (shareTimeoutRef.current) {
+        clearTimeout(shareTimeoutRef.current);
+        shareTimeoutRef.current = null;
+      }
+
+      const persist = Boolean(options?.persist);
+
+      if (!persist) {
+        const duration = options?.duration ?? 2000;
+        shareTimeoutRef.current = setTimeout(() => {
+          setShareNotice(null);
+          shareTimeoutRef.current = null;
+        }, duration);
+      }
+    },
+    []
+  );
+
+  const clearShareNotice = useCallback(() => {
     if (shareTimeoutRef.current) {
       clearTimeout(shareTimeoutRef.current);
-    }
-
-    shareTimeoutRef.current = setTimeout(() => {
-      setShareNotice(null);
       shareTimeoutRef.current = null;
-    }, 2000);
+    }
+    setShareNotice(null);
   }, []);
 
   const handleShareVideo = useCallback(
@@ -882,6 +891,49 @@ export default function Home() {
     [userEmail, userId]
   );
 
+  const uploadFileWithProgress = useCallback(
+    (signedUrl: string, file: File) =>
+      new Promise<void>((resolve, reject) => {
+        if (typeof XMLHttpRequest === "undefined") {
+          reject(new Error("File uploads are not supported in this environment."));
+          return;
+        }
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(percent);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setUploadProgress(100);
+            resolve();
+            return;
+          }
+
+          reject(new Error(`Upload failed. Status ${xhr.status}`));
+        };
+
+        xhr.onerror = () => {
+          reject(new Error("Upload failed. Please try again."));
+        };
+
+        xhr.open("PUT", signedUrl);
+        xhr.setRequestHeader("x-upsert", "false");
+
+        const formData = new FormData();
+        formData.append("cacheControl", "3600");
+        formData.append("", file);
+
+        xhr.send(formData);
+      }),
+    []
+  );
+
   const handleUploadSubmit = useCallback(
     async (
       payload: UploadPayload
@@ -891,6 +943,7 @@ export default function Home() {
       }
 
       try {
+        clearShareNotice();
         const hasFile = Boolean(payload.videoFile);
         const hasLink = Boolean(payload.videoLink.trim());
 
@@ -923,23 +976,44 @@ export default function Home() {
             .replace(/[^a-zA-Z0-9./_-]/g, "");
           storageObjectPath = pathSegments;
 
-          const { error: uploadError } = await supabase.storage
-            .from("ai_videos")
-            .upload(storageObjectPath, file, {
-              cacheControl: "3600",
+          showShareNotice(
+            "Please stay on the page. This window will close once your post is complete.",
+            { persist: true }
+          );
+          setUploadProgress(0);
+
+          const storageClient = supabase.storage.from("ai_videos");
+          const { data: signedData, error: signedError } =
+            await storageClient.createSignedUploadUrl(storageObjectPath, {
               upsert: false,
-              contentType: file.type || "application/octet-stream",
             });
 
-          if (uploadError) {
-            return { success: false, error: uploadError.message };
+          if (signedError || !signedData) {
+            setUploadProgress(null);
+            showShareNotice("Upload failed. Please try again.", { duration: 4000 });
+            return {
+              success: false,
+              error: signedError?.message ?? "Unable to start upload.",
+            };
+          }
+
+          try {
+            await uploadFileWithProgress(signedData.signedUrl, file);
+          } catch (progressError) {
+            setUploadProgress(null);
+            showShareNotice("Upload failed. Please try again.", { duration: 4000 });
+            return {
+              success: false,
+              error:
+                progressError instanceof Error
+                  ? progressError.message
+                  : "Upload failed. Please try again.",
+            };
           }
 
           const {
             data: { publicUrl },
-          } = supabase.storage
-            .from("ai_videos")
-            .getPublicUrl(storageObjectPath);
+          } = storageClient.getPublicUrl(storageObjectPath);
 
           videoUrl = publicUrl;
           source = "file";
@@ -978,12 +1052,20 @@ export default function Home() {
           .maybeSingle();
 
         if (error) {
+          setUploadProgress(null);
+          if (payload.videoFile) {
+            showShareNotice("Upload failed. Please try again.", { duration: 4000 });
+          }
           return { success: false, error: error.message };
         }
 
         const mapped = data ? mapDatabaseVideo(data) : null;
 
         if (!mapped) {
+          setUploadProgress(null);
+          if (payload.videoFile) {
+            showShareNotice("Upload failed. Please try again.", { duration: 4000 });
+          }
           return {
             success: false,
             error:
@@ -998,8 +1080,19 @@ export default function Home() {
           window.sessionStorage.setItem(UPLOAD_MODAL_FLAG_KEY, "closed");
         }
 
+        if (payload.videoFile) {
+          setUploadProgress(null);
+          showShareNotice("Upload complete! Your video is live.", {
+            duration: 3000,
+          });
+        }
+
         return { success: true };
       } catch (unknownError) {
+        setUploadProgress(null);
+        if (payload.videoFile) {
+          showShareNotice("Upload failed. Please try again.", { duration: 4000 });
+        }
         return {
           success: false,
           error:
@@ -1009,7 +1102,7 @@ export default function Home() {
         };
       }
     },
-    [user]
+    [clearShareNotice, showShareNotice, uploadFileWithProgress, user]
   );
 
   const handleUpdateVideoDetails = useCallback(
@@ -1289,89 +1382,27 @@ export default function Home() {
     [uploadedVideos, seedVideos]
   );
 
-  const topRatedState = useMemo(() => {
-    const featuredOverride = new Set<string>();
-    const suppressedOverride = new Set<string>();
-    const combined = new Set<string>();
+  const videosToDisplay = useMemo(() => {
+    if (selectedCategory === "All") {
+      return allVideos;
+    }
 
-    [...seedVideos, ...uploadedVideos].forEach((video) => {
-      if (video.topRatedOverride === "feature") {
-        featuredOverride.add(video.id);
-        combined.add(video.id);
-        return;
-      }
-
-      if (video.topRatedOverride === "suppress") {
-        suppressedOverride.add(video.id);
-      }
-    });
-
-    const autoPromoted = [...uploadedVideos]
-      .filter((video) => {
-        if (featuredOverride.has(video.id) || suppressedOverride.has(video.id)) {
-          return false;
-        }
-
-        return video.viewCount > 0;
-      })
-      .sort((first, second) => second.viewCount - first.viewCount)
-      .slice(0, AUTO_TOP_RATED_LIMIT);
-
-    autoPromoted.forEach((video) => {
-      combined.add(video.id);
-    });
-
-    return {
-      featuredOverride,
-      suppressedOverride,
-      ids: combined,
-    };
-  }, [seedVideos, uploadedVideos]);
+    return allVideos.filter((video) =>
+      video.categories.includes(selectedCategory)
+    );
+  }, [allVideos, selectedCategory]);
 
   const topRatedVideos = useMemo(() => {
-    const filtered = allVideos.filter((video) => {
-      if (!topRatedState.ids.has(video.id)) {
-        return false;
-      }
+    const featured = allVideos.filter((video) => video.isTopRated);
 
-      if (selectedCategory === "All") {
-        return true;
-      }
+    if (selectedCategory === "All") {
+      return featured;
+    }
 
-      return video.categories.includes(selectedCategory);
-    });
-
-    return filtered
-      .slice()
-      .sort((first, second) => {
-        const firstOverride = first.topRatedOverride === "feature";
-        const secondOverride = second.topRatedOverride === "feature";
-
-        if (firstOverride && !secondOverride) {
-          return -1;
-        }
-
-        if (!firstOverride && secondOverride) {
-          return 1;
-        }
-
-        return (second.viewCount ?? 0) - (first.viewCount ?? 0);
-      });
-  }, [allVideos, selectedCategory, topRatedState]);
-
-  const videosToDisplay = useMemo(() => {
-    return allVideos.filter((video) => {
-      if (topRatedState.ids.has(video.id)) {
-        return false;
-      }
-
-      if (selectedCategory === "All") {
-        return true;
-      }
-
-      return video.categories.includes(selectedCategory);
-    });
-  }, [allVideos, selectedCategory, topRatedState]);
+    return featured.filter((video) =>
+      video.categories.includes(selectedCategory)
+    );
+  }, [allVideos, selectedCategory]);
   const promptCopy = useMemo(() => {
     if (authPromptContext === "profile") {
       return {
@@ -1396,7 +1427,7 @@ export default function Home() {
         return;
       }
 
-      const nextOverride = getNextTopRatedOverride(video.topRatedOverride ?? null);
+      const nextValue = !video.isTopRated;
       setPostError(null);
 
       const isUploadedVideo = uploadedVideos.some(
@@ -1407,8 +1438,7 @@ export default function Home() {
         const { error } = await supabase
           .from("videos")
           .update({
-            is_top_rated: nextOverride === "feature",
-            top_rated_override: nextOverride,
+            is_top_rated: nextValue,
           })
           .eq("id", video.id);
 
@@ -1422,8 +1452,7 @@ export default function Home() {
             item.id === video.id
               ? {
                   ...item,
-                  isTopRated: nextOverride === "feature",
-                  topRatedOverride: nextOverride,
+                  isTopRated: nextValue,
                 }
               : item
           )
@@ -1436,8 +1465,7 @@ export default function Home() {
           item.id === video.id
             ? {
                 ...item,
-                isTopRated: nextOverride === "feature",
-                topRatedOverride: nextOverride,
+                isTopRated: nextValue,
               }
             : item
         )
@@ -1450,8 +1478,18 @@ export default function Home() {
     <div className="flex min-h-screen flex-col bg-black text-white">
       {shareNotice ? (
         <div className="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center px-4">
-          <div className="pointer-events-auto rounded-full border border-white/20 bg-white/10 px-6 py-3 text-sm font-medium text-white shadow-lg backdrop-blur">
-            {shareNotice}
+          <div className="pointer-events-auto w-full max-w-md rounded-full border border-blue-400/40 bg-blue-500/20 px-6 py-3 text-sm font-medium text-white shadow-lg backdrop-blur">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <span>{shareNotice}</span>
+              {uploadProgress !== null ? (
+                <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
+                  <div
+                    className="h-full bg-blue-300 transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
@@ -1475,7 +1513,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-3 sm:flex-row sm:items-start sm:gap-4">
+        <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
           {isAuthenticated ? (
             <button
               type="button"
@@ -1640,7 +1678,6 @@ export default function Home() {
                   onShare={() => handleShareVideo(video)}
                   isAdmin={isAdmin}
                   onToggleTopRated={() => handleToggleTopRated(video)}
-                  isFeatured
                 />
               ))}
             </div>
@@ -1679,7 +1716,6 @@ export default function Home() {
                 onShare={() => handleShareVideo(video)}
                 isAdmin={isAdmin}
                 onToggleTopRated={() => handleToggleTopRated(video)}
-                isFeatured={false}
               />
             ))}
           </div>
@@ -3192,31 +3228,21 @@ function VideoCard({
   onShare,
   isAdmin,
   onToggleTopRated,
-  isFeatured,
 }: {
   video: Video;
   onOpen: () => void;
   onShare: () => void;
   isAdmin: boolean;
   onToggleTopRated?: () => void;
-  isFeatured: boolean;
 }) {
   const displayTitle = video.title ?? "Untitled Upload";
   const displayName = video.fullName ?? toTitleCase(video.uploader.name);
   const views = video.viewCount ?? 0;
-  const overrideState = video.topRatedOverride ?? null;
-  const toggleLabel =
-    overrideState === "feature"
-      ? "Suppress Top Rated"
-      : overrideState === "suppress"
-      ? "Clear Top Rated Override"
-      : "Feature Top Rated";
-  const adminButtonClasses =
-    overrideState === "feature"
-      ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
-      : overrideState === "suppress"
-      ? "border-red-500 text-red-300 hover:bg-red-500 hover:text-white"
-      : "border-white/20 text-white hover:border-blue-500 hover:text-white";
+  const isFeatured = video.isTopRated;
+  const toggleLabel = isFeatured ? "Remove Top Rated" : "Feature Top Rated";
+  const adminButtonClasses = isFeatured
+    ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
+    : "border-white/20 text-white hover:border-blue-500 hover:text-white";
 
   return (
     <article
@@ -3225,7 +3251,10 @@ function VideoCard({
       } bg-white/[0.04] p-5 transition hover:border-blue-500`}
       onClick={onOpen}
     >
-      <div className="relative aspect-video overflow-hidden rounded-2xl bg-black">
+      <div
+        className="relative aspect-video overflow-hidden rounded-2xl bg-black"
+        onClick={(event) => event.stopPropagation()}
+      >
         {video.source === "youtube" || video.source === "instagram" ? (
           <iframe
             src={video.url}
@@ -3280,8 +3309,7 @@ function VideoCard({
             preload="metadata"
             className="h-full w-full"
             src={video.url}
-            controlsList="nodownload nofullscreen noremoteplayback"
-            disablePictureInPicture
+            controlsList="nodownload"
             onContextMenu={(event) => event.preventDefault()}
             draggable={false}
           />
