@@ -848,7 +848,10 @@ export default function Home() {
           user_id: userId,
           message: trimmed,
         })
-        .catch(() => undefined);
+        .then(
+          () => undefined,
+          () => undefined
+        );
 
       setProfileData((previous) => {
         if (previous.feedback.length >= 5) {
