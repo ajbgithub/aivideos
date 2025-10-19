@@ -55,44 +55,4 @@ export const CATEGORY_OPTIONS = [
   "TV",
 ] as const;
 
-export const INITIAL_VIDEOS: StoredVideo[] = [
-  {
-    id: "vid-ea-01",
-    title: "Thunder - Wharton Vets Gala",
-    description: "Live performance highlight from the Wharton Vets Gala showcase.",
-    url: "https://www.instagram.com/reel/DPeTuiSEVMU/embed",
-    source: "instagram",
-    uploader: { name: "Andrew J. Bilden", email: "" },
-    createdAt: new Date().toISOString(),
-    viewCount: 0,
-    isTopRated: false,
-    categories: ["Music Videos", "Inspirational", "Trailers"],
-    fullName: "Andrew J. Bilden",
-  },
-  {
-    id: "vid-ea-02",
-    title: "Newport '83",
-    description: "Vintage-inspired visuals celebrating coastal life in Newport.",
-    url: "https://www.youtube.com/embed/yXi2hPadEKE",
-    source: "youtube",
-    uploader: { name: "Andrew J. Bilden", email: "" },
-    createdAt: new Date().toISOString(),
-    viewCount: 0,
-    isTopRated: false,
-    categories: ["Films", "Trailers", "Romance"],
-    fullName: "Andrew J. Bilden",
-  },
-  {
-    id: "vid-ea-03",
-    title: "White Paper Fan Teaser",
-    description: "Teaser reel for the upcoming White Paper Fan release.",
-    url: "https://www.instagram.com/reel/DNvUqWs4nsH/embed",
-    source: "instagram",
-    uploader: { name: "Andrew J. Bilden", email: "" },
-    createdAt: new Date().toISOString(),
-    viewCount: 0,
-    isTopRated: false,
-    categories: ["Trailers", "Action", "Films"],
-    fullName: "Andrew J. Bilden",
-  },
-];
+export const INITIAL_VIDEOS: StoredVideo[] = [];

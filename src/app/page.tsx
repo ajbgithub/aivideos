@@ -3271,6 +3271,7 @@ function VideoCard({
             allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
             loading="lazy"
             style={{ border: 0 }}
+            allowFullScreen
           />
         ) : (
           <video
@@ -3575,11 +3576,13 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
     }
 
     if (host.includes("x.com") || host.includes("twitter.com")) {
-      const encoded = encodeURIComponent(input);
-      return {
-        url: `https://twitframe.com/show?url=${encoded}`,
-        source: "x",
-      };
+      const tweetId = extractTweetId(url);
+      if (tweetId) {
+        return {
+          url: `https://platform.twitter.com/embed/Tweet.html?id=${tweetId}`,
+          source: "x",
+        };
+      }
     }
 
     return { url: input, source: "external" };
@@ -3595,4 +3598,26 @@ function toTitleCase(input: string) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function extractTweetId(url: URL): string | null {
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+  const statusIndex = pathSegments.findIndex((segment) => segment === "status");
+  if (statusIndex >= 0 && pathSegments[statusIndex + 1]) {
+    const rawId = pathSegments[statusIndex + 1];
+    const id = rawId.replace(/[^0-9]/g, "");
+    return id.length > 0 ? id : null;
+  }
+
+  const paramsId =
+    url.searchParams.get("id") ??
+    url.searchParams.get("tweet_id") ??
+    url.searchParams.get("status");
+
+  if (paramsId) {
+    const trimmed = paramsId.replace(/[^0-9]/g, "");
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  return null;
 }
