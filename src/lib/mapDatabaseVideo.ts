@@ -75,6 +75,7 @@ function isValidVideoSource(value: string | null): value is VideoSource {
     "tiktok",
     "spotify",
     "apple-podcasts",
+    "sora2",
     "x",
     "external",
   ];

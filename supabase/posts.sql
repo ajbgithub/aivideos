@@ -71,6 +71,7 @@ alter table public.videos
       'tiktok',
       'spotify',
       'apple-podcasts',
+      'sora2',
       'x',
       'external'
     )

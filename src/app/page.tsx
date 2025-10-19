@@ -78,7 +78,6 @@ const DEFAULT_PROFILE_DATA: ProfileData = {
   feedback: [],
 };
 const ROTATING_LABELS = [
-  "Creatives and Audiences",
   "AI Videos",
   "AI Films",
   "AI Podcasts",
@@ -1500,7 +1499,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
           {isAuthenticated ? (
             <button
               type="button"
@@ -1542,6 +1541,7 @@ export default function Home() {
                   <li>• Suno AI</li>
                   <li>• Grok</li>
                   <li>• 11Labs</li>
+                  <li>• Sora 2</li>
                 </ul>
               </div>
             ) : null}
@@ -2190,7 +2190,7 @@ function UploadModal({
           </div>
 
           <label className="flex flex-col gap-3 text-sm">
-            Video or audio link (YouTube, Instagram, TikTok, X, Spotify, Apple Podcasts, or hosted file URL)
+            Video or audio link (YouTube, Instagram, TikTok, X, Sora2, Spotify, Apple Podcasts, or hosted file URL)
             <input
               value={formState.videoLink}
               onChange={handleLinkInputChange}
@@ -3180,7 +3180,7 @@ function ProfileUploadEditor({
           {mediaExpanded ? (
             <div className="space-y-4 border-t border-white/10 p-4">
               <label className="flex flex-col gap-2 text-sm text-white">
-                Video or audio link (YouTube, Instagram, TikTok, X, Spotify, Apple Podcasts, or hosted file URL)
+                Video or audio link (YouTube, Instagram, TikTok, X, Sora2, Spotify, Apple Podcasts, or hosted file URL)
                 <input
                   value={mediaLink}
                   onChange={handleMediaLinkChange}
@@ -3297,6 +3297,16 @@ function VideoCard({
             sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
             loading="lazy"
             style={{ border: 0 }}
+          />
+        ) : video.source === "sora2" ? (
+          <iframe
+            src={video.url}
+            title={video.title ?? "Sora clip"}
+            className="h-full w-full"
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+            loading="lazy"
+            style={{ border: 0 }}
+            allowFullScreen
           />
         ) : video.source === "x" ? (
           <iframe
@@ -3453,7 +3463,7 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
       >
         <h3 className="text-xl font-semibold tracking-wide">About Us</h3>
         <p className="mt-4 text-base text-white">
-          Welcome to Eagle AI Pictures! We&apos;re a place for creatives and consumers, using AI to tell stories and inspire people.
+          Welcome to Eagle AI Pictures! We&apos;re a place for creatives and audiences, using AI to tell stories and inspire people.
         </p>
         <p className="mt-4 text-base italic text-white">
           Make things that move people
@@ -3621,9 +3631,9 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
 
     if (host.includes("sora.chatgpt.com")) {
       const pathSegments = url.pathname.split("/").filter(Boolean);
-      const clipId = pathSegments[pathSegments.length - 1];
-      if (clipId) {
-        const embedUrl = `https://sora.chatgpt.com/embed/${clipId}`;
+      if (pathSegments.length > 0) {
+        const clipPath = pathSegments.join("/");
+        const embedUrl = `https://sora.chatgpt.com/embed/${clipPath}`;
         return {
           url: embedUrl,
           source: "sora2",

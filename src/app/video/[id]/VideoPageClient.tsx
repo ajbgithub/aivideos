@@ -559,6 +559,19 @@ function PreviewMedia({ video }: { video: StoredVideo }) {
     );
   }
 
+  if (video.source === "sora2") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "Sora preview"}
+        className="pointer-events-none h-full w-full"
+        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+        allowFullScreen
+        loading="lazy"
+      />
+    );
+  }
+
   const thumbnailSrc = getVideoThumbnail(video);
   return (
     <Image
@@ -633,6 +646,19 @@ function VideoPlayer({ video }: { video: StoredVideo }) {
         title={video.title ?? "X post"}
         className="aspect-video w-full"
         allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+        loading="lazy"
+        allowFullScreen
+      />
+    );
+  }
+
+  if (video.source === "sora2") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "Sora clip"}
+        className="aspect-video w-full"
+        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
         loading="lazy"
         allowFullScreen
       />
@@ -739,6 +765,10 @@ function getVideoThumbnail(video: StoredVideo): string {
 
   if (video.source === "x") {
     return "/thumbnails/x.svg";
+  }
+
+  if (video.source === "sora2") {
+    return "/thumbnails/sora2.svg";
   }
 
   if (video.source === "file") {
