@@ -11,6 +11,7 @@ export type DatabaseVideoRow = {
   full_name: string | null;
   view_count: number | null;
   is_top_rated: boolean | null;
+  top_rated_override: string | null;
   uploader_name: string | null;
   uploader_email: string | null;
   created_at: string | null;
@@ -28,6 +29,13 @@ export function mapDatabaseVideo(
     : "external";
 
   const uploaderName = row.uploader_name?.trim() || "Creator";
+  const rawOverride = row.top_rated_override;
+  const topRatedOverride =
+    rawOverride === "feature" || rawOverride === "suppress"
+      ? rawOverride
+      : row.is_top_rated
+      ? "feature"
+      : null;
 
   return {
     id: row.id,
@@ -41,7 +49,9 @@ export function mapDatabaseVideo(
     },
     createdAt: row.created_at ?? new Date().toISOString(),
     viewCount: row.view_count ?? 0,
-    isTopRated: Boolean(row.is_top_rated),
+    isTopRated:
+      topRatedOverride === "feature" ||
+      Boolean(row.is_top_rated && topRatedOverride !== "suppress"),
     categories: Array.isArray(row.categories)
       ? row.categories
           .filter((category): category is string => Boolean(category))
@@ -49,6 +59,7 @@ export function mapDatabaseVideo(
       : [],
     fullName: row.full_name ?? undefined,
     storageObjectPath: row.storage_object_path ?? null,
+    topRatedOverride,
   };
 }
 
@@ -64,6 +75,7 @@ function isValidVideoSource(value: string | null): value is VideoSource {
     "tiktok",
     "spotify",
     "apple-podcasts",
+    "x",
     "external",
   ];
 

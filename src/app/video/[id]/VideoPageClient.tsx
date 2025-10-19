@@ -26,7 +26,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
   const [status, setStatus] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
-  const [moreByCreator, setMoreByCreator] = useState<StoredVideo[]>([]);
+  const [moreFromPage, setMoreFromPage] = useState<StoredVideo[]>([]);
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasRecordedViewRef = useRef(false);
   const viewFormatterRef = useRef(
@@ -74,7 +74,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
       const { data, error } = await supabase
         .from("videos")
         .select(
-          "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+          "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, top_rated_override, uploader_name, uploader_email, created_at"
         )
         .eq("id", videoId)
         .maybeSingle();
@@ -178,7 +178,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
 
   useEffect(() => {
     if (!video) {
-      setMoreByCreator([]);
+      setMoreFromPage([]);
       return;
     }
 
@@ -211,7 +211,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
           const { data, error } = await supabase
             .from("videos")
             .select(
-              "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+            "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, top_rated_override, uploader_name, uploader_email, created_at"
             )
             .eq("uploader_email", rawEmail)
             .neq("id", video.id)
@@ -226,7 +226,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
           }
         } finally {
           if (isMounted) {
-            setMoreByCreator(Array.from(related.values()).slice(0, 6));
+          setMoreFromPage(Array.from(related.values()).slice(0, 6));
           }
         }
       };
@@ -239,7 +239,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
     }
 
     if (fallbackName.length === 0) {
-      setMoreByCreator([]);
+      setMoreFromPage([]);
       return;
     }
 
@@ -254,7 +254,7 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
       }
     });
 
-    setMoreByCreator(Array.from(related.values()).slice(0, 6));
+    setMoreFromPage(Array.from(related.values()).slice(0, 6));
     return () => {
       /* no async cleanup needed */
     };
@@ -340,11 +340,11 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
             <p className="text-xs uppercase tracking-[0.4em] text-white">
               Description
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-white">
+            <div className="mt-3 text-sm leading-relaxed text-white">
               {video.description && video.description.trim().length > 0
-                ? video.description
+                ? renderTextWithLinks(video.description)
                 : "The creator hasn’t shared details about this piece yet."}
-            </p>
+            </div>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-white">
@@ -377,13 +377,13 @@ export default function VideoPageClient({ videoId }: { videoId: string }) {
           </div>
         </aside>
       </main>
-      {moreByCreator.length > 0 ? (
+      {moreFromPage.length > 0 ? (
         <section className="mt-16">
           <h2 className="text-lg font-semibold text-white">
-            More by this creator
+            More from this page
           </h2>
           <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {moreByCreator.map((item) => (
+            {moreFromPage.map((item) => (
               <RelatedVideoCard
                 key={item.id}
                 video={item}
@@ -535,6 +535,19 @@ function VideoPlayer({ video }: { video: StoredVideo }) {
     );
   }
 
+  if (video.source === "x") {
+    return (
+      <iframe
+        src={video.url}
+        title={video.title ?? "X post"}
+        className="aspect-video w-full"
+        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+        loading="lazy"
+        allowFullScreen
+      />
+    );
+  }
+
   return (
     <video
       controls
@@ -556,6 +569,58 @@ function toTitleCase(input: string) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function renderTextWithLinks(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const lines = text.split(/\r?\n/);
+
+  lines.forEach((line, lineIndex) => {
+    const urlPattern = /(https?:\/\/[^\s]+)/g;
+    let match: RegExpExecArray | null;
+    let lastIndex = 0;
+
+    while ((match = urlPattern.exec(line)) !== null) {
+      const [url] = match;
+      const start = match.index;
+
+      if (start > lastIndex) {
+        nodes.push(
+          <span key={`text-${lineIndex}-${start}`}>
+            {line.slice(lastIndex, start)}
+          </span>
+        );
+      }
+
+      nodes.push(
+        <a
+          key={`link-${lineIndex}-${start}`}
+          href={url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-blue-300 underline decoration-dotted underline-offset-2 hover:text-blue-200"
+        >
+          {url}
+        </a>
+      );
+
+      lastIndex = start + url.length;
+    }
+
+    if (lastIndex < line.length) {
+      nodes.push(
+        <span key={`text-${lineIndex}-tail`}>
+          {line.slice(lastIndex)}
+        </span>
+      );
+    }
+
+    if (lineIndex < lines.length - 1) {
+      nodes.push(<br key={`br-${lineIndex}`} />);
+    }
+  });
+
+  return nodes.length > 0 ? nodes : [text];
 }
 
 function getVideoThumbnail(video: StoredVideo): string {
@@ -580,6 +645,10 @@ function getVideoThumbnail(video: StoredVideo): string {
 
   if (video.source === "tiktok") {
     return "/thumbnails/tiktok.svg";
+  }
+
+  if (video.source === "x") {
+    return "/thumbnails/x.svg";
   }
 
   if (video.source === "file") {

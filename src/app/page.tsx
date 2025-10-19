@@ -95,12 +95,22 @@ function createFeedbackEntry(text: string): FeedbackEntry {
   };
 }
 
+function getNextTopRatedOverride(
+  current: Video["topRatedOverride"] | null
+): Video["topRatedOverride"] | null {
+  if (current === "feature") {
+    return "suppress";
+  }
+
+  if (current === "suppress") {
+    return null;
+  }
+
+  return "feature";
+}
+
 const initialVideos: Video[] = INITIAL_VIDEOS.map((video) => ({ ...video }));
-const SEEDED_TOP_RATED_IDS = new Set([
-  "vid-ea-01",
-  "vid-ea-02",
-  "vid-ea-03",
-]);
+const AUTO_TOP_RATED_LIMIT = 6;
 
 const ADMIN_EMAIL = "mbamoveteam@gmail.com";
 
@@ -571,7 +581,7 @@ export default function Home() {
       const { data, error } = await supabase
         .from("videos")
         .select(
-          "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+          "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, top_rated_override, uploader_name, uploader_email, created_at"
         )
         .order("created_at", { ascending: false });
 
@@ -963,7 +973,7 @@ export default function Home() {
           .from("videos")
           .insert(insertPayload)
           .select(
-            "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+            "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, top_rated_override, uploader_name, uploader_email, created_at"
           )
           .maybeSingle();
 
@@ -1103,7 +1113,7 @@ export default function Home() {
           })
           .eq("id", video.id)
           .select(
-            "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at"
+            "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, top_rated_override, uploader_name, uploader_email, created_at"
           )
           .maybeSingle();
 
@@ -1240,6 +1250,32 @@ export default function Home() {
     }
   }, [user]);
 
+  const handleQuickSubscribe = useCallback(() => {
+    if (!user) {
+      setAuthPrompt(true);
+      setAuthPromptContext("profile");
+      return;
+    }
+
+    setSubscriptionSuccessMessage(null);
+    setSubscriptionErrorMessage(null);
+    setShowSubscriptionPanel(true);
+
+    if (subscriptionIsEnrolled) {
+      setSubscriptionStatus("loaded");
+      return;
+    }
+
+    if (!subscriptionSubmitting) {
+      void handleJoinSubscriptionWaitlist();
+    }
+  }, [
+    user,
+    subscriptionIsEnrolled,
+    subscriptionSubmitting,
+    handleJoinSubscriptionWaitlist,
+  ]);
+
   const handleCloseSubscriptionPanel = useCallback(() => {
     setShowSubscriptionPanel(false);
     setSubscriptionStatus("idle");
@@ -1252,28 +1288,90 @@ export default function Home() {
     () => [...uploadedVideos, ...seedVideos],
     [uploadedVideos, seedVideos]
   );
-  const regularVideos = useMemo(
-    () => allVideos.filter((video) => !video.isTopRated),
-    [allVideos]
-  );
-  const videosToDisplay = useMemo(() => {
-    if (selectedCategory === "All") {
-      return regularVideos;
-    }
 
-    return regularVideos.filter((video) => video.categories.includes(selectedCategory));
-  }, [regularVideos, selectedCategory]);
+  const topRatedState = useMemo(() => {
+    const featuredOverride = new Set<string>();
+    const suppressedOverride = new Set<string>();
+    const combined = new Set<string>();
+
+    [...seedVideos, ...uploadedVideos].forEach((video) => {
+      if (video.topRatedOverride === "feature") {
+        featuredOverride.add(video.id);
+        combined.add(video.id);
+        return;
+      }
+
+      if (video.topRatedOverride === "suppress") {
+        suppressedOverride.add(video.id);
+      }
+    });
+
+    const autoPromoted = [...uploadedVideos]
+      .filter((video) => {
+        if (featuredOverride.has(video.id) || suppressedOverride.has(video.id)) {
+          return false;
+        }
+
+        return video.viewCount > 0;
+      })
+      .sort((first, second) => second.viewCount - first.viewCount)
+      .slice(0, AUTO_TOP_RATED_LIMIT);
+
+    autoPromoted.forEach((video) => {
+      combined.add(video.id);
+    });
+
+    return {
+      featuredOverride,
+      suppressedOverride,
+      ids: combined,
+    };
+  }, [seedVideos, uploadedVideos]);
+
   const topRatedVideos = useMemo(() => {
-    const featured = allVideos.filter((video) => video.isTopRated);
+    const filtered = allVideos.filter((video) => {
+      if (!topRatedState.ids.has(video.id)) {
+        return false;
+      }
 
-    if (selectedCategory === "All") {
-      return featured;
-    }
+      if (selectedCategory === "All") {
+        return true;
+      }
 
-    return featured.filter((video) =>
-      video.categories.includes(selectedCategory)
-    );
-  }, [allVideos, selectedCategory]);
+      return video.categories.includes(selectedCategory);
+    });
+
+    return filtered
+      .slice()
+      .sort((first, second) => {
+        const firstOverride = first.topRatedOverride === "feature";
+        const secondOverride = second.topRatedOverride === "feature";
+
+        if (firstOverride && !secondOverride) {
+          return -1;
+        }
+
+        if (!firstOverride && secondOverride) {
+          return 1;
+        }
+
+        return (second.viewCount ?? 0) - (first.viewCount ?? 0);
+      });
+  }, [allVideos, selectedCategory, topRatedState]);
+
+  const videosToDisplay = useMemo(() => {
+    return allVideos.filter((video) => {
+      if (topRatedState.ids.has(video.id)) {
+        return false;
+      }
+
+      if (selectedCategory === "All") {
+        return true;
+      }
+
+      return video.categories.includes(selectedCategory);
+    });
+  }, [allVideos, selectedCategory, topRatedState]);
   const promptCopy = useMemo(() => {
     if (authPromptContext === "profile") {
       return {
@@ -1298,7 +1396,7 @@ export default function Home() {
         return;
       }
 
-      const nextValue = !video.isTopRated;
+      const nextOverride = getNextTopRatedOverride(video.topRatedOverride ?? null);
       setPostError(null);
 
       const isUploadedVideo = uploadedVideos.some(
@@ -1308,7 +1406,10 @@ export default function Home() {
       if (isUploadedVideo) {
         const { error } = await supabase
           .from("videos")
-          .update({ is_top_rated: nextValue })
+          .update({
+            is_top_rated: nextOverride === "feature",
+            top_rated_override: nextOverride,
+          })
           .eq("id", video.id);
 
         if (error) {
@@ -1318,7 +1419,13 @@ export default function Home() {
 
         setUploadedVideos((previousVideos) =>
           previousVideos.map((item) =>
-            item.id === video.id ? { ...item, isTopRated: nextValue } : item
+            item.id === video.id
+              ? {
+                  ...item,
+                  isTopRated: nextOverride === "feature",
+                  topRatedOverride: nextOverride,
+                }
+              : item
           )
         );
         return;
@@ -1326,12 +1433,25 @@ export default function Home() {
 
       setSeedVideos((previousVideos) =>
         previousVideos.map((item) =>
-          item.id === video.id ? { ...item, isTopRated: nextValue } : item
+          item.id === video.id
+            ? {
+                ...item,
+                isTopRated: nextOverride === "feature",
+                topRatedOverride: nextOverride,
+              }
+            : item
         )
       );
     },
     [isAdmin, uploadedVideos]
   );
+
+  const adminButtonClasses =
+    overrideState === "feature"
+      ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
+      : overrideState === "suppress"
+      ? "border-red-500 text-red-300 hover:bg-red-500 hover:text-white"
+      : "border-white/20 text-white hover:border-blue-500 hover:text-white";
 
   return (
     <div className="flex min-h-screen flex-col bg-black text-white">
@@ -1362,7 +1482,19 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-4">
+        <div className="flex flex-wrap items-center justify-end gap-3 sm:flex-row sm:items-start sm:gap-4">
+          {isAuthenticated ? (
+            <button
+              type="button"
+              onClick={handleQuickSubscribe}
+              disabled={subscriptionSubmitting}
+              className={`inline-flex items-center justify-center rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-400 ${
+                subscriptionSubmitting ? "cursor-not-allowed opacity-60 hover:bg-blue-500" : ""
+              }`}
+            >
+              Subscribe
+            </button>
+          ) : null}
           <div className="relative" ref={toolsMenuRef}>
             <button
               type="button"
@@ -1515,6 +1647,7 @@ export default function Home() {
                   onShare={() => handleShareVideo(video)}
                   isAdmin={isAdmin}
                   onToggleTopRated={() => handleToggleTopRated(video)}
+                  isFeatured
                 />
               ))}
             </div>
@@ -1553,6 +1686,7 @@ export default function Home() {
                 onShare={() => handleShareVideo(video)}
                 isAdmin={isAdmin}
                 onToggleTopRated={() => handleToggleTopRated(video)}
+                isFeatured={false}
               />
             ))}
           </div>
@@ -2026,7 +2160,7 @@ function UploadModal({
           </div>
 
           <label className="flex flex-col gap-3 text-sm">
-            Video or audio link (YouTube, Instagram, TikTok, Spotify, Apple Podcasts, or hosted file URL)
+            Video or audio link (YouTube, Instagram, TikTok, X, Spotify, Apple Podcasts, or hosted file URL)
             <input
               value={formState.videoLink}
               onChange={handleLinkInputChange}
@@ -3011,7 +3145,7 @@ function ProfileUploadEditor({
           {mediaExpanded ? (
             <div className="space-y-4 border-t border-white/10 p-4">
               <label className="flex flex-col gap-2 text-sm text-white">
-                Video or audio link (YouTube, Instagram, TikTok, Spotify, Apple Podcasts, or hosted file URL)
+                Video or audio link (YouTube, Instagram, TikTok, X, Spotify, Apple Podcasts, or hosted file URL)
                 <input
                   value={mediaLink}
                   onChange={handleMediaLinkChange}
@@ -3065,21 +3199,30 @@ function VideoCard({
   onShare,
   isAdmin,
   onToggleTopRated,
+  isFeatured,
 }: {
   video: Video;
   onOpen: () => void;
   onShare: () => void;
   isAdmin: boolean;
   onToggleTopRated?: () => void;
+  isFeatured: boolean;
 }) {
   const displayTitle = video.title ?? "Untitled Upload";
   const displayName = video.fullName ?? toTitleCase(video.uploader.name);
   const views = video.viewCount ?? 0;
+  const overrideState = video.topRatedOverride ?? null;
+  const toggleLabel =
+    overrideState === "feature"
+      ? "Suppress Top Rated"
+      : overrideState === "suppress"
+      ? "Clear Top Rated Override"
+      : "Feature Top Rated";
 
   return (
     <article
       className={`relative flex cursor-pointer flex-col rounded-3xl border ${
-        video.isTopRated ? "border-blue-500" : "border-white/10"
+        isFeatured ? "border-blue-500" : "border-white/10"
       } bg-white/[0.04] p-5 transition hover:border-blue-500`}
       onClick={onOpen}
     >
@@ -3121,6 +3264,15 @@ function VideoCard({
             loading="lazy"
             style={{ border: 0 }}
           />
+        ) : video.source === "x" ? (
+          <iframe
+            src={video.url}
+            title={video.title ?? "X post"}
+            className="h-full w-full"
+            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+            loading="lazy"
+            style={{ border: 0 }}
+          />
         ) : (
           <video
             controls
@@ -3147,7 +3299,7 @@ function VideoCard({
         <ShareIcon />
       </button>
       <div className="mt-4">
-        {video.isTopRated ? (
+        {isFeatured ? (
           <span className="text-[10px] uppercase tracking-[0.4em] text-blue-400">
             Top Rated
           </span>
@@ -3176,13 +3328,9 @@ function VideoCard({
               event.stopPropagation();
               onToggleTopRated();
             }}
-            className={`mt-4 inline-flex items-center rounded-full border px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${
-              video.isTopRated
-                ? "border-blue-500 text-blue-400 hover:bg-blue-500 hover:text-white"
-                : "border-white/20 text-white hover:border-blue-500 hover:text-white"
-            }`}
+            className={`mt-4 inline-flex items-center rounded-full border px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${adminButtonClasses}`}
           >
-            {video.isTopRated ? "Remove Top Rated" : "Feature Top Rated"}
+            {toggleLabel}
           </button>
         ) : null}
       </div>
@@ -3424,6 +3572,14 @@ function normaliseLink(input: string): { url: string; source: VideoSource } {
       return {
         url: embedUrl,
         source: "apple-podcasts",
+      };
+    }
+
+    if (host.includes("x.com") || host.includes("twitter.com")) {
+      const encoded = encodeURIComponent(input);
+      return {
+        url: `https://twitframe.com/show?url=${encoded}`,
+        source: "x",
       };
     }
 

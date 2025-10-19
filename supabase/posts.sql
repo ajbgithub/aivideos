@@ -14,6 +14,7 @@ create table if not exists public.videos (
       'tiktok',
       'spotify',
       'apple-podcasts',
+      'x',
       'external'
     )
   ),
@@ -23,6 +24,9 @@ create table if not exists public.videos (
   full_name text,
   view_count bigint not null default 0,
   is_top_rated boolean not null default false,
+  top_rated_override text constraint videos_top_rated_override_check check (
+    top_rated_override in ('feature', 'suppress') or top_rated_override is null
+  ),
   uploader_name text not null,
   uploader_email text not null,
   created_at timestamptz not null default now(),
@@ -66,8 +70,20 @@ alter table public.videos
       'tiktok',
       'spotify',
       'apple-podcasts',
+      'x',
       'external'
     )
+  );
+
+alter table public.videos
+  add column if not exists top_rated_override text;
+
+alter table public.videos
+  drop constraint if exists videos_top_rated_override_check;
+
+alter table public.videos
+  add constraint videos_top_rated_override_check check (
+    top_rated_override in ('feature', 'suppress') or top_rated_override is null
   );
 
 alter table public.videos

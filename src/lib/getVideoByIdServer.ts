@@ -6,7 +6,7 @@ import { mapDatabaseVideo } from "@/lib/mapDatabaseVideo";
 import { supabase } from "@/lib/supabaseClient";
 
 const VIDEO_FIELDS =
-  "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, uploader_name, uploader_email, created_at";
+  "id, title, description, video_url, source, storage_object_path, categories, full_name, view_count, is_top_rated, top_rated_override, uploader_name, uploader_email, created_at";
 
 export async function getVideoByIdServer(
   id: string

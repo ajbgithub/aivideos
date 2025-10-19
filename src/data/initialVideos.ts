@@ -5,7 +5,10 @@ export type VideoSource =
   | "tiktok"
   | "spotify"
   | "apple-podcasts"
+  | "x"
   | "external";
+
+export type TopRatedOverride = "feature" | "suppress";
 
 export type StoredVideo = {
   id: string;
@@ -23,6 +26,7 @@ export type StoredVideo = {
   categories: string[];
   fullName?: string;
   storageObjectPath?: string | null;
+  topRatedOverride?: TopRatedOverride | null;
 };
 
 export const CATEGORY_OPTIONS = [
@@ -61,7 +65,7 @@ export const INITIAL_VIDEOS: StoredVideo[] = [
     uploader: { name: "Andrew J. Bilden", email: "" },
     createdAt: new Date().toISOString(),
     viewCount: 0,
-    isTopRated: true,
+    isTopRated: false,
     categories: ["Music Videos", "Inspirational", "Trailers"],
     fullName: "Andrew J. Bilden",
   },
@@ -74,7 +78,7 @@ export const INITIAL_VIDEOS: StoredVideo[] = [
     uploader: { name: "Andrew J. Bilden", email: "" },
     createdAt: new Date().toISOString(),
     viewCount: 0,
-    isTopRated: true,
+    isTopRated: false,
     categories: ["Films", "Trailers", "Romance"],
     fullName: "Andrew J. Bilden",
   },
@@ -87,7 +91,7 @@ export const INITIAL_VIDEOS: StoredVideo[] = [
     uploader: { name: "Andrew J. Bilden", email: "" },
     createdAt: new Date().toISOString(),
     viewCount: 0,
-    isTopRated: true,
+    isTopRated: false,
     categories: ["Trailers", "Action", "Films"],
     fullName: "Andrew J. Bilden",
   },
