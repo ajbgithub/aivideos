@@ -84,6 +84,7 @@ const ROTATING_LABELS = [
   "AI TV",
   "AI Music Videos",
 ];
+const FEATURED_TOOLS = ["Google Flow", "Suno AI", "Grok", "11Labs", "Sora 2"];
 
 function createFeedbackEntry(text: string): FeedbackEntry {
   return {
@@ -123,6 +124,7 @@ export default function Home() {
   const shareTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const [showToolsPanel, setShowToolsPanel] = useState(false);
+  const [showToolsDialog, setShowToolsDialog] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const toolsButtonRef = useRef<HTMLButtonElement | null>(null);
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(false);
@@ -437,12 +439,31 @@ export default function Home() {
   }, [showToolsPanel]);
 
   useEffect(() => {
+    if (!showToolsDialog) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowToolsDialog(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showToolsDialog]);
+
+  useEffect(() => {
     if (!user) {
       setProfileMenuOpen(false);
       setShowProfilePanel(false);
       setProfileData(DEFAULT_PROFILE_DATA);
       setShowToolsPanel(false);
       setShowSubscriptionPanel(false);
+      setShowToolsDialog(false);
     }
   }, [user]);
 
@@ -709,6 +730,16 @@ export default function Home() {
       window.sessionStorage.removeItem("authAction");
     }
   }, []);
+
+  const handleToolsClick = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      setShowToolsDialog(true);
+      setShowToolsPanel(false);
+      return;
+    }
+
+    setShowToolsPanel((previous) => !previous);
+  }, [setShowToolsDialog, setShowToolsPanel]);
 
   const showShareNotice = useCallback(
     (
@@ -1516,11 +1547,11 @@ export default function Home() {
             <button
               type="button"
               ref={toolsButtonRef}
-              onClick={() => setShowToolsPanel((previous) => !previous)}
+              onClick={handleToolsClick}
               className="flex items-center justify-center rounded-full border border-white/20 bg-white/[0.08] p-1.5 transition hover:border-blue-300 hover:bg-white/[0.14]"
               aria-label="Show recommended AI tools"
-              aria-haspopup="true"
-              aria-expanded={showToolsPanel}
+              aria-haspopup="dialog"
+              aria-expanded={showToolsPanel || showToolsDialog}
             >
               <Image
                 src="/favicon.ico"
@@ -1532,16 +1563,14 @@ export default function Home() {
               />
             </button>
             {showToolsPanel ? (
-              <div className="absolute right-0 top-14 w-64 rounded-2xl border border-white/10 bg-black/90 p-4 text-sm text-white shadow-2xl backdrop-blur">
+              <div className="absolute right-0 top-14 hidden w-64 rounded-2xl border border-white/10 bg-black/90 p-4 text-sm text-white shadow-2xl backdrop-blur sm:block">
                 <h3 className="text-base font-semibold text-white">
                   Great AI tools we like
                 </h3>
                 <ul className="mt-3 space-y-2 text-sm text-white/90">
-                  <li>• Google Flow</li>
-                  <li>• Suno AI</li>
-                  <li>• Grok</li>
-                  <li>• 11Labs</li>
-                  <li>• Sora 2</li>
+                  {FEATURED_TOOLS.map((tool) => (
+                    <li key={tool}>• {tool}</li>
+                  ))}
                 </ul>
               </div>
             ) : null}
@@ -1772,6 +1801,9 @@ export default function Home() {
       ) : null}
       {showAboutDialog ? (
         <AboutDialog onClose={() => setShowAboutDialog(false)} />
+      ) : null}
+      {showToolsDialog ? (
+        <ToolsDialog onClose={() => setShowToolsDialog(false)} />
       ) : null}
     </div>
   );
@@ -3446,6 +3478,36 @@ function PromptDialog({
             {confirmLabel}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolsDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-3xl border border-white/10 bg-black px-8 py-10 text-center shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 className="text-xl font-semibold tracking-wide">
+          Great AI tools we like
+        </h3>
+        <ul className="mt-6 space-y-3 text-base text-white">
+          {FEATURED_TOOLS.map((tool) => (
+            <li key={tool}>{tool}</li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-8 inline-flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white transition hover:border-white"
+        >
+          Close
+        </button>
       </div>
     </div>
   );
